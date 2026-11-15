@@ -1,0 +1,10 @@
+{
+  "name": "City Builder – Build Your City",
+  "short_name": "CityBuilder",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#87ceeb",
+  "theme_color": "#1b2430",
+  "icons": []
+}

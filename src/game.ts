@@ -6,11 +6,14 @@ import { World, TILE } from './world';
 import { UI } from './ui';
 import type { PlacedBuilding, SaveData } from './types';
 
+const ISO_YAW = Math.PI / 4;
+const ISO_PITCH = Math.atan(1 / Math.sqrt(2)); // ~35.264° elevation
+
 export class Game {
   ui: UI;
   renderer!: THREE.WebGLRenderer;
   scene!: THREE.Scene;
-  camera!: THREE.PerspectiveCamera;
+  camera!: THREE.OrthographicCamera;
   world!: World;
   clock = new THREE.Clock();
   raycaster = new THREE.Raycaster();
@@ -27,10 +30,12 @@ export class Game {
   hoverCell: { x: number; z: number } | null = null;
   mapId = 'plaine';
   camTarget = new THREE.Vector3(0, 0, 0);
-  camYaw = Math.PI / 4;
-  camPitch = 0.9;
-  camDist = 60;
+  camYaw = ISO_YAW;
+  camPitch = ISO_PITCH;
+  viewSize = 45;
   dragging = false;
+  dragMoved = false;
+  downPointer = { x: 0, y: 0 };
   lastPointer = { x: 0, y: 0 };
   pointers = new Map<number, { x: number; y: number }>();
   lastPinch = 0;
@@ -58,7 +63,8 @@ export class Game {
     this.scene.background = new THREE.Color(0x87ceeb);
     this.scene.fog = new THREE.Fog(0x87ceeb, 80, 220);
 
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
+    const aspect = 1;
+    this.camera = new THREE.OrthographicCamera(-this.viewSize * aspect, this.viewSize * aspect, this.viewSize, -this.viewSize, 0.1, 1000);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -97,7 +103,7 @@ export class Game {
     el.addEventListener('pointermove', (e: PointerEvent) => this.onPointerMove(e));
     el.addEventListener('pointerup', (e: PointerEvent) => this.onPointerUp(e));
     el.addEventListener('pointercancel', (e: PointerEvent) => this.onPointerUp(e));
-    el.addEventListener('wheel', (e: WheelEvent) => { e.preventDefault(); this.camDist = THREE.MathUtils.clamp(this.camDist * (1 + Math.sign(e.deltaY) * 0.08), 20, 140); }, { passive: false });
+    el.addEventListener('wheel', (e: WheelEvent) => { e.preventDefault(); this.viewSize = THREE.MathUtils.clamp(this.viewSize * (1 + Math.sign(e.deltaY) * 0.08), 12, 90); this.onResize(); }, { passive: false });
     el.addEventListener('contextmenu', (e: MouseEvent) => e.preventDefault());
   }
 
@@ -106,7 +112,12 @@ export class Game {
     const host = this.ui.getSceneHost();
     const w = host.clientWidth || window.innerWidth;
     const h = host.clientHeight || window.innerHeight;
-    this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    const aspect = w / h;
+    this.camera.left = -this.viewSize * aspect;
+    this.camera.right = this.viewSize * aspect;
+    this.camera.top = this.viewSize;
+    this.camera.bottom = -this.viewSize;
+    this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
   }
 
@@ -120,6 +131,8 @@ export class Game {
     this.renderer.domElement.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     this.lastPointer = { x: e.clientX, y: e.clientY };
+    this.downPointer = { x: e.clientX, y: e.clientY };
+    this.dragMoved = false;
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       this.lastPinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -135,48 +148,45 @@ export class Game {
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       if (this.lastPinch) {
         const delta = dist - this.lastPinch;
-        this.camDist = THREE.MathUtils.clamp(this.camDist - delta * 0.08, 20, 140);
-        const midX = (pts[0].x + pts[1].x) / 2;
-        const dx = midX - this.lastPointer.x;
-        this.camYaw -= dx * 0.005;
+        this.viewSize = THREE.MathUtils.clamp(this.viewSize - delta * 0.05, 12, 90);
+        this.onResize();
       }
       this.lastPinch = dist;
       this.lastPointer = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      this.dragMoved = true;
       return;
     }
     if (!this.dragging) return;
     const dx = e.clientX - this.lastPointer.x;
     const dy = e.clientY - this.lastPointer.y;
+    if (Math.hypot(e.clientX - this.downPointer.x, e.clientY - this.downPointer.y) > 6) this.dragMoved = true;
     this.lastPointer = { x: e.clientX, y: e.clientY };
-    if (e.buttons === 2) {
-      this.camYaw -= dx * 0.005;
-      this.camPitch = THREE.MathUtils.clamp(this.camPitch + dy * 0.005, 0.35, 1.25);
-    } else if (this.ui.tool === 'select' && (e.pointerType === 'touch' || e.buttons === 1)) {
-      // if moved a lot, treat as pan
-      this.panCamera(dx, dy);
-    } else if (e.buttons === 1) {
-      this.panCamera(dx, dy);
+    // Fixed isometric view: pan only (no rotation)
+    if (e.buttons === 1 || e.buttons === 2 || e.pointerType === 'touch') {
+      // allow panning in select tool, or when user clearly drags in other tools
+      if (this.ui.tool === 'select' || this.dragMoved) this.panCamera(dx, dy);
     }
     this.updateHover(e);
   }
 
   panCamera(dx: number, dy: number) {
-    const s = this.camDist * 0.0022;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const worldPerPixel = (this.viewSize * 2) / Math.max(1, rect.height);
     const forward = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     const right = new THREE.Vector3(forward.z, 0, -forward.x);
-    this.camTarget.addScaledVector(right, -dx * s);
-    this.camTarget.addScaledVector(forward, -dy * s);
+    this.camTarget.addScaledVector(right, -dx * worldPerPixel);
+    this.camTarget.addScaledVector(forward, dy * worldPerPixel);
     const limit = (TILE * 64) / 2 - 4;
     this.camTarget.x = THREE.MathUtils.clamp(this.camTarget.x, -limit, limit);
     this.camTarget.z = THREE.MathUtils.clamp(this.camTarget.z, -limit, limit);
   }
 
   onPointerUp(e: PointerEvent) {
-    const wasTap = this.pointers.size <= 1;
+    const wasSingle = this.pointers.size <= 1;
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.lastPinch = 0;
     if (this.pointers.size === 0) this.dragging = false;
-    if (wasTap && e.type === 'pointerup') {
+    if (wasSingle && e.type === 'pointerup' && !this.dragMoved) {
       // click/tap action
       this.setPointerFromEvent(e);
       this.handleClick();
@@ -371,7 +381,7 @@ export class Game {
     }
     else if (action === 'speed') this.speed = payload.speed;
     else if (action === 'save') { this.saveSlot('slot1'); this.ui.toast('Ville sauvegardée (slot1).'); }
-    else if (action === 'recenter') { this.camTarget.set(0,0,0); this.camDist = 60; this.camYaw = Math.PI/4; this.ui.toast('Caméra recentrée.'); }
+    else if (action === 'recenter') { this.camTarget.set(0,0,0); this.viewSize = 45; this.camYaw = ISO_YAW; this.camPitch = ISO_PITCH; this.onResize(); this.ui.toast('Vue isométrique recentrée.'); }
     else if (action === 'toggle-weather') {
       const w = this.world?.weather === 'rain' ? 'clear' : 'rain';
       this.world?.setWeather(w);
@@ -442,10 +452,12 @@ export class Game {
   }
 
   updateCamera() {
-    const y = Math.cos(this.camPitch) * this.camDist;
-    const h = Math.sin(this.camPitch) * this.camDist;
-    this.camera.position.set(this.camTarget.x + Math.sin(this.camYaw) * h, Math.max(8, y), this.camTarget.z + Math.cos(this.camYaw) * h);
+    const dist = 200;
+    const y = Math.cos(this.camPitch) * dist;
+    const h = Math.sin(this.camPitch) * dist;
+    this.camera.position.set(this.camTarget.x + Math.sin(this.camYaw) * h, Math.max(20, y), this.camTarget.z + Math.cos(this.camYaw) * h);
     this.camera.lookAt(this.camTarget);
+    this.camera.updateProjectionMatrix();
   }
 
   updateDayNight() {

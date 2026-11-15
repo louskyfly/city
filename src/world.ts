@@ -18,6 +18,7 @@ export class World {
   vehiclesGroup = new THREE.Group();
   effectsGroup = new THREE.Group();
   previewMesh: THREE.Object3D | null = null;
+  previewDefId: string | null = null;
   private buildingMeshes = new Map<string, THREE.Object3D>();
   private roadMeshes = new Map<string, THREE.Mesh>();
   private occupancy = new Map<string, string>(); // "x,z" -> uid or 'road'
@@ -267,6 +268,7 @@ export class World {
 
   setPreview(defId: string | null) {
     if (this.previewMesh) { this.scene.remove(this.previewMesh); this.previewMesh = null; }
+    this.previewDefId = defId;
     if (!defId) return;
     const def = BUILDING_BY_ID[defId];
     if (!def) return;
@@ -284,7 +286,10 @@ export class World {
 
   updatePreview(x: number, z: number, valid: boolean) {
     if (!this.previewMesh) return;
-    const p = this.cellToWorld(x, z);
+    const def = this.previewDefId ? BUILDING_BY_ID[this.previewDefId] : null;
+    const cx = def ? x + (def.width - 1) / 2 : x;
+    const cz = def ? z + (def.depth - 1) / 2 : z;
+    const p = this.cellToWorld(cx, cz);
     this.previewMesh.position.set(p.x, 0.05, p.z);
     this.previewMesh.traverse((o: THREE.Object3D) => { const m = o as THREE.Mesh; const mat = (m as any).material; if (mat && mat.color) { mat.color.setHex(valid ? 0x7bed9f : 0xff6b6b); } });
   }

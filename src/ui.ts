@@ -119,30 +119,35 @@ export class UI {
 
   getSceneHost(): HTMLElement { return this.root.querySelector('#scene-host') as HTMLElement; }
 
+  private lastTier = 0;
+  private lastCompleted: string[] = [];
+
   renderTabs() {
     const cats: { id: BuildingCategory; label: string }[] = [
       { id: 'residential', label: 'Résidentiel' }, { id: 'commercial', label: 'Commercial' }, { id: 'industrial', label: 'Industriel' },
       { id: 'services', label: 'Services' }, { id: 'leisure', label: 'Loisirs' }, { id: 'infrastructure', label: 'Infra.' },
     ];
     const tabs = this.root.querySelector('#tabs')!;
-    tabs.innerHTML = cats.map(c => `<button class="tab ${c.id===this.activeCategory?'active':''}" data-cat="${c.id}">${c.label}</button>`).join('') + `<button class="tab" data-cat="missions">Missions</button>`;
+    const missionsVisible = (this.root.querySelector('#missions') as HTMLElement | null)?.style.display === 'grid';
+    tabs.innerHTML = cats.map(c => `<button class="tab ${!missionsVisible && c.id===this.activeCategory?'active':''}" data-cat="${c.id}">${c.label}</button>`).join('') + `<button class="tab ${missionsVisible?'active':''}" data-cat="missions">Missions</button>`;
     tabs.querySelectorAll('.tab').forEach(el => el.addEventListener('click', () => {
       const cat = (el as HTMLElement).dataset.cat!;
       if (cat === 'missions') {
         (this.root.querySelector('#catalog') as HTMLElement).style.display = 'none';
         (this.root.querySelector('#missions') as HTMLElement).style.display = 'grid';
-        this.renderMissions();
+        this.renderMissions(this.lastCompleted);
       } else {
         this.activeCategory = cat as BuildingCategory;
         (this.root.querySelector('#catalog') as HTMLElement).style.display = 'grid';
         (this.root.querySelector('#missions') as HTMLElement).style.display = 'none';
-        this.onAction('category', { category: this.activeCategory });
+        this.renderCatalog(this.lastTier);
       }
       this.renderTabs();
     }));
   }
 
   renderCatalog(tier: number) {
+    this.lastTier = tier;
     const items = BUILDINGS.filter(b => b.category === this.activeCategory);
     const el = this.root.querySelector('#catalog');
     if (!el) return;
@@ -170,6 +175,8 @@ export class UI {
   }
 
   updateHUD(stats: CityStats, completedMissions: string[], weather?: string) {
+    this.lastCompleted = completedMissions;
+    this.lastTier = stats.tier;
     const hud = this.root.querySelector('#hud');
     if (!hud) return;
     const netPower = stats.powerProduced - stats.powerUsed;
@@ -186,7 +193,8 @@ export class UI {
     ].map(([l,v,c]) => `<div class="stat-pill"><div class="label">${l}</div><div class="value" style="color:${c==='bad'?'var(--bad)':c==='warn'?'var(--warn)':'var(--text)'}">${v}</div></div>`).join('');
     const tierLabel = this.root.querySelector('#tier-label');
     if (tierLabel) tierLabel.textContent = tierName(stats.tier);
-    if ((this.root.querySelector('#missions') as HTMLElement)?.style.display !== 'none') this.renderMissions(completedMissions);
+    const missionsEl = this.root.querySelector('#missions') as HTMLElement | null;
+    if (missionsEl && missionsEl.style.display !== 'none') this.renderMissions(completedMissions);
   }
 
   showInfo(html: string) {

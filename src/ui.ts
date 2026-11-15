@@ -2,14 +2,21 @@ import { BUILDINGS, MISSIONS, TIERS } from './data/buildings';
 import type { BuildingCategory, CityStats } from './types';
 import { tierName } from './simulation';
 
-export type Screen = 'menu' | 'game' | 'load' | 'settings';
+export type Screen = 'menu' | 'game' | 'load' | 'settings' | 'newmap';
+
+export const MAPS = [
+  { id: 'plaine', name: 'Plaine verdoyante', desc: 'Terrain équilibré, idéal pour débuter.' },
+  { id: 'collines', name: 'Collines', desc: 'Relief marqué et rochers, paysages variés.' },
+  { id: 'riviere', name: 'Rivière & lac', desc: 'Présence d’eau et espaces naturels.' },
+  { id: 'foret', name: 'Forêt', desc: 'Nombreux arbres et ambiance naturelle.' },
+];
 
 export class UI {
   root: HTMLElement;
   onAction: (action: string, payload?: any) => void = () => {};
   selectedDefId: string | null = null;
   activeCategory: BuildingCategory = 'residential';
-  tool: 'select' | 'build' | 'bulldoze' = 'select';
+  tool: 'select' | 'build' | 'bulldoze' | 'move' = 'select';
   screen: Screen = 'menu';
   toastTimer?: number;
 
@@ -24,17 +31,25 @@ export class UI {
         <h1>City Builder</h1>
         <p>Construisez votre ville, gérez son économie et faites grandir une véritable métropole.</p>
         <div class="menu-grid">
-          <div class="list-item"><h2>Nouvelle partie</h2><p class="small">Terrain vierge, budget initial et missions de progression.</p></div>
-          <div class="list-item"><h2>Gestion vivante</h2><p class="small">Population, budget, eau, électricité, bonheur et circulation.</p></div>
-          <div class="list-item"><h2>Conçu pour iPad</h2><p class="small">Contrôles tactiles, interface paysage et sauvegarde locale.</p></div>
+          <div class="list-item"><h2>Nouvelle partie</h2><p class="small">Choisissez une carte, construisez et développez votre cité.</p></div>
+          <div class="list-item"><h2>Gestion vivante</h2><p class="small">Population, budget, eau, électricité, bonheur, trafic et météo.</p></div>
+          <div class="list-item"><h2>Conçu pour iPad</h2><p class="small">Contrôles tactiles, interface paysage, sauvegardes automatiques et PWA.</p></div>
         </div>
         <div class="menu-actions">
-          <button class="btn primary" data-action="new">Nouvelle partie</button>
+          <button class="btn primary" data-action="new-screen">Nouvelle partie</button>
           <button class="btn" data-action="continue" ${hasAuto ? '' : 'disabled'}>Continuer</button>
           <button class="btn" data-action="load-screen">Charger une ville</button>
           <button class="btn" data-action="settings">Paramètres</button>
         </div>
       </div></div>`;
+    this.bindMenu();
+  }
+
+  renderNewMap() {
+    this.screen = 'newmap';
+    this.root.innerHTML = `<div class="overlay"><div class="menu-card"><h2>Choisir une carte</h2>
+      <div class="menu-grid">${MAPS.map(m => `<div class="list-item"><h2>${m.name}</h2><p class="small">${m.desc}</p><div class="menu-actions"><button class="btn primary" data-action="new" data-map="${m.id}">Commencer</button></div></div>`).join('')}</div>
+      <div class="menu-actions"><button class="btn" data-action="menu">Retour</button></div></div></div>`;
     this.bindMenu();
   }
 
@@ -53,9 +68,10 @@ export class UI {
     this.screen = 'settings';
     this.root.innerHTML = `<div class="overlay"><div class="menu-card"><h2>Paramètres</h2>
       <div class="list">
-        <div class="list-item"><strong>Contrôles</strong><div class="small">Souris : glisser pour déplacer, molette pour zoom, clic droit pour pivoter. Tactile : 1 doigt déplacer, 2 doigts zoom/pivoter, toucher pour sélectionner.</div></div>
-        <div class="list-item"><strong>Sauvegarde</strong><div class="small">Sauvegarde automatique régulière et emplacements manuels. Les données restent dans le navigateur.</div></div>
-        <div class="list-item"><strong>Performance</strong><div class="small">Rendu 3D optimisé pour iPad avec ombres dynamiques et simulation progressive.</div></div>
+        <div class="list-item"><strong>Contrôles</strong><div class="small">Souris : glisser pour déplacer, molette pour zoom, clic droit pour pivoter, clic pour sélectionner/placer. Tactile : 1 doigt déplacer (en sélection), 2 doigts zoom/pivoter, toucher pour agir.</div></div>
+        <div class="list-item"><strong>Construction</strong><div class="small">Outils : Sélection, Déplacer, Supprimer. Améliorez les bâtiments depuis le panneau d’information. Les routes génèrent du trafic.</div></div>
+        <div class="list-item"><strong>Sauvegarde</strong><div class="small">Sauvegarde automatique (auto) et manuelle (slot1). Plusieurs sauvegardes conservées localement dans le navigateur.</div></div>
+        <div class="list-item"><strong>Performance</strong><div class="small">Rendu 3D optimisé (ombres, pixel ratio limité, météo/simulation progressive) pour rester fluide sur iPad.</div></div>
       </div>
       <div class="menu-actions"><button class="btn" data-action="menu">Retour</button></div></div></div>`;
     this.bindMenu();
@@ -63,7 +79,7 @@ export class UI {
 
   private bindMenu() {
     this.root.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => {
-      const e = el as HTMLElement; this.onAction(e.dataset.action!, { slot: e.dataset.slot });
+      const e = el as HTMLElement; this.onAction(e.dataset.action!, { slot: e.dataset.slot, mapId: e.dataset.map });
     }));
   }
 
@@ -82,7 +98,10 @@ export class UI {
         <div class="info-panel" id="info-panel"><h4>Ville</h4><p>Sélectionnez un bâtiment ou placez une construction.</p></div>
         <div class="bottom-bar">
           <button class="btn" data-tool="select">Sélection</button>
+          <button class="btn" data-tool="move">Déplacer</button>
           <button class="btn" data-tool="bulldoze">Supprimer</button>
+          <button class="btn" id="recenter-btn">Recentrer</button>
+          <button class="btn" id="weather-btn">Météo</button>
           <button class="btn" id="save-btn">Sauvegarder</button>
           <button class="btn" id="menu-btn">Menu</button>
           <div class="spacer"></div>
@@ -150,7 +169,7 @@ export class UI {
     el.innerHTML = MISSIONS.map(m => `<div class="build-card ${completed.includes(m.id)?'selected':''}"><div class="name">${completed.includes(m.id)?'✅ ':''}${m.title}</div><div class="meta">${m.description}</div><div class="meta">Récompense: ${m.reward} €</div></div>`).join('');
   }
 
-  updateHUD(stats: CityStats, completedMissions: string[]) {
+  updateHUD(stats: CityStats, completedMissions: string[], weather?: string) {
     const hud = this.root.querySelector('#hud');
     if (!hud) return;
     const netPower = stats.powerProduced - stats.powerUsed;
@@ -163,6 +182,7 @@ export class UI {
       ['Eau', `${stats.waterUsed}/${stats.waterProduced}`, netWater < 0 ? 'bad':''],
       ['Stade', tierName(stats.tier), ''],
       ['Jour', `${stats.day} · ${Math.floor(stats.timeOfDay)}h`, ''],
+      ['Météo', weather === 'rain' ? 'Pluie' : 'Clair', ''],
     ].map(([l,v,c]) => `<div class="stat-pill"><div class="label">${l}</div><div class="value" style="color:${c==='bad'?'var(--bad)':c==='warn'?'var(--warn)':'var(--text)'}">${v}</div></div>`).join('');
     const tierLabel = this.root.querySelector('#tier-label');
     if (tierLabel) tierLabel.textContent = tierName(stats.tier);
@@ -188,6 +208,8 @@ export class UI {
     }));
     this.root.querySelector('#save-btn')?.addEventListener('click', () => this.onAction('save'));
     this.root.querySelector('#menu-btn')?.addEventListener('click', () => this.onAction('menu'));
+    this.root.querySelector('#recenter-btn')?.addEventListener('click', () => this.onAction('recenter'));
+    this.root.querySelector('#weather-btn')?.addEventListener('click', () => this.onAction('toggle-weather'));
     this.syncToolButtons();
   }
 

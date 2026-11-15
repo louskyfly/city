@@ -23,6 +23,7 @@ export class Game {
   simAcc = 0;
   autoSaveAcc = 0;
   selectedUid: string | null = null;
+  movingUid: string | null = null;
   hoverCell: { x: number; z: number } | null = null;
   mapId = 'plaine';
   camTarget = new THREE.Vector3(0, 0, 0);
@@ -42,11 +43,11 @@ export class Game {
     this.ui.renderMenu(SaveManager.hasAuto());
   }
 
-  startNew() {
+  startNew(mapId = 'plaine') {
     this.stats = createInitialStats();
     this.buildings = [];
     this.completedMissions = [];
-    this.mapId = 'plaine';
+    this.mapId = mapId;
     this.mountGame();
   }
 
@@ -73,19 +74,20 @@ export class Game {
     this.sun.shadow.camera.left = -80; this.sun.shadow.camera.right = 80; this.sun.shadow.camera.top = 80; this.sun.shadow.camera.bottom = -80;
     this.scene.add(this.sun);
 
-    this.world = new World(this.scene);
+    this.world = new World(this.scene, this.mapId);
     // restore
     for (const b of this.buildings) {
       if (b.defId === 'road') this.world.placeRoad(b.x, b.z);
       else this.world.placeBuilding(b);
     }
-    // ensure roads array consistent if loaded as placed buildings? roads stored separately in save
+    this.world.syncVehicles();
     this.bindEvents();
     this.onResize();
     this.running = true;
     this.clock.start();
     requestAnimationFrame(() => this.loop());
-    this.ui.toast('Bienvenue dans votre ville !');
+    this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
+    this.ui.toast(`Bienvenue dans votre ville (${this.mapId}) !`);
   }
 
   bindEvents() {
@@ -196,6 +198,14 @@ export class Game {
           : this.world.isAreaFree(c.x, c.z, def.width, def.depth);
         this.world.updatePreview(c.x, c.z, valid);
       }
+    } else if (this.ui.tool === 'move' && this.movingUid) {
+      const b = this.buildings.find(x => x.uid === this.movingUid);
+      const def = b ? BUILDING_BY_ID[b.defId] : null;
+      if (b && def) {
+        if (!this.world.previewMesh) this.world.setPreview(b.defId);
+        const valid = this.world.isAreaFree(c.x, c.z, def.width, def.depth, b.uid);
+        this.world.updatePreview(c.x, c.z, valid);
+      }
     }
   }
 
@@ -213,18 +223,54 @@ export class Game {
       this.tryBulldoze(c.x, c.z);
       return;
     }
+    if (this.ui.tool === 'move') {
+      this.handleMoveClick(c.x, c.z);
+      return;
+    }
     // select
     const occ = this.world.getOccupant(c.x, c.z);
     if (occ && occ !== 'road') {
       const b = this.buildings.find(x => x.uid === occ);
       if (b) this.selectBuilding(b);
     } else if (occ === 'road') {
-      this.ui.showInfo(`<h4>Route</h4><p>Infrastructure de circulation.</p><div class="row"><button class="btn" id="recenter">Recentrer</button></div>`);
+      this.ui.showInfo(`<h4>Route</h4><p>Infrastructure de circulation.</p><p class="small">Relie les quartiers, soutient le trafic et les services.</p>`);
       this.selectedUid = null;
     } else {
       this.selectedUid = null;
       this.ui.showInfo(`<h4>Terrain</h4><p>Case libre (${c.x}, ${c.z}). Zone constructible.</p>`);
     }
+  }
+
+  handleMoveClick(x: number, z: number) {
+    const occ = this.world.getOccupant(x, z);
+    if (!this.movingUid) {
+      if (occ && occ !== 'road') {
+        const b = this.buildings.find(v => v.uid === occ);
+        if (b && b.defId !== 'road') {
+          this.movingUid = b.uid;
+          this.world.setPreview(b.defId);
+          this.ui.toast('Choisissez un nouvel emplacement.');
+        } else {
+          this.ui.toast('Sélectionnez un bâtiment à déplacer (pas une route).');
+        }
+      } else {
+        this.ui.toast('Touchez un bâtiment à déplacer.');
+      }
+      return;
+    }
+    const b = this.buildings.find(v => v.uid === this.movingUid);
+    if (!b) { this.movingUid = null; this.world.setPreview(null); return; }
+    const def = BUILDING_BY_ID[b.defId];
+    if (!def) return;
+    if (!this.world.isAreaFree(x, z, def.width, def.depth, b.uid)) { this.ui.toast('Emplacement invalide.'); return; }
+    // relocate
+    this.world.removeBuilding(b.uid, b);
+    b.x = x; b.z = z;
+    this.world.placeBuilding(b);
+    this.movingUid = null;
+    this.world.setPreview(null);
+    this.ui.toast(`${def.name} déplacé.`);
+    this.selectBuilding(b);
   }
 
   tryPlace(defId: string, x: number, z: number) {
@@ -284,9 +330,13 @@ export class Game {
       <p>Élec: ${(def.powerProd||0)*b.level - (def.powerUse||0)*b.level} · Eau: ${(def.waterProd||0)*b.level - (def.waterUse||0)*b.level}</p>
       <div class="row">
         <button class="btn" id="upgrade-btn">Améliorer (${upCost} €)</button>
+        <button class="btn" id="move-btn">Déplacer</button>
         <button class="btn" id="recenter-btn">Recentrer</button>
       </div>`);
     this.ui.root.querySelector('#upgrade-btn')?.addEventListener('click', () => this.upgradeBuilding(b.uid));
+    this.ui.root.querySelector('#move-btn')?.addEventListener('click', () => {
+      this.ui.tool = 'move'; this.movingUid = b.uid; this.world.setPreview(b.defId); this.ui.syncToolButtons(); this.ui.toast('Choisissez un nouvel emplacement.');
+    });
     this.ui.root.querySelector('#recenter-btn')?.addEventListener('click', () => {
       const p = this.world.cellToWorld(b.x, b.z); this.camTarget.set(p.x, 0, p.z);
     });
@@ -305,17 +355,29 @@ export class Game {
   }
 
   handleAction(action: string, payload?: any) {
-    if (action === 'new') this.startNew();
+    if (action === 'new-screen') this.ui.renderNewMap();
+    else if (action === 'new') this.startNew(payload?.mapId || 'plaine');
     else if (action === 'continue') { const d = SaveManager.load('auto'); if (d) this.loadData(d); }
     else if (action === 'load-screen') this.ui.renderLoad(SaveManager.listSlots());
     else if (action === 'settings') this.ui.renderSettings();
     else if (action === 'menu') { if (this.renderer) { this.saveAuto(); this.cleanup3D(); } this.ui.renderMenu(SaveManager.hasAuto()); }
     else if (action === 'load-slot') { const d = SaveManager.load(payload.slot); if (d) this.loadData(d); else this.ui.toast('Sauvegarde invalide.'); }
     else if (action === 'delete-slot') { SaveManager.deleteSlot(payload.slot); this.ui.renderLoad(SaveManager.listSlots()); }
-    else if (action === 'select-def') { this.world?.setPreview(payload.defId); this.ui.tool = 'build'; }
-    else if (action === 'tool') { if (payload.tool !== 'build') this.world?.setPreview(null); else this.world?.setPreview(this.ui.selectedDefId); }
+    else if (action === 'select-def') { this.world?.setPreview(payload.defId); this.ui.tool = 'build'; this.movingUid = null; }
+    else if (action === 'tool') {
+      if (payload.tool !== 'build' && payload.tool !== 'move') { this.world?.setPreview(null); this.movingUid = null; }
+      if (payload.tool === 'build') this.world?.setPreview(this.ui.selectedDefId);
+      if (payload.tool === 'move' && !this.movingUid) this.world?.setPreview(null);
+    }
     else if (action === 'speed') this.speed = payload.speed;
     else if (action === 'save') { this.saveSlot('slot1'); this.ui.toast('Ville sauvegardée (slot1).'); }
+    else if (action === 'recenter') { this.camTarget.set(0,0,0); this.camDist = 60; this.camYaw = Math.PI/4; this.ui.toast('Caméra recentrée.'); }
+    else if (action === 'toggle-weather') {
+      const w = this.world?.weather === 'rain' ? 'clear' : 'rain';
+      this.world?.setWeather(w);
+      this.ui.toast(w === 'rain' ? 'Météo : pluie' : 'Météo : ciel dégagé');
+      this.ui.updateHUD(this.stats, this.completedMissions, w);
+    }
     else if (action === 'category') { /* noop */ }
   }
 
@@ -355,6 +417,7 @@ export class Game {
       if (this.autoSaveAcc >= 20) { this.autoSaveAcc = 0; this.saveAuto(); }
       this.world.updateVehicles(dt * 60 * this.speed);
     }
+    this.world.updateEffects(dt * Math.max(1, this.speed));
     this.updateCamera();
     this.updateDayNight();
     this.renderer.render(this.scene, this.camera);
@@ -371,7 +434,7 @@ export class Game {
     }
     if (this.stats.money < -2000) this.ui.toast('Attention : finances critiques !');
     this.world.syncVehicles();
-    this.ui.updateHUD(this.stats, this.completedMissions);
+    this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
     if (this.selectedUid) {
       const b = this.buildings.find(x => x.uid === this.selectedUid);
       if (b) this.selectBuilding(b);
@@ -388,12 +451,15 @@ export class Game {
   updateDayNight() {
     const t = this.stats.timeOfDay;
     const dayFactor = Math.max(0, Math.sin(((t - 6) / 24) * Math.PI * 2));
-    const sky = new THREE.Color().setHSL(0.58, 0.6, 0.25 + dayFactor * 0.45);
+    const night = dayFactor < 0.25;
+    const sky = new THREE.Color().setHSL(0.58, 0.55, 0.18 + dayFactor * 0.5);
+    if (this.world?.weather === 'rain') sky.multiplyScalar(0.75);
     this.scene.background = sky;
     (this.scene.fog as THREE.Fog).color.copy(sky);
-    this.sun.intensity = 0.15 + dayFactor * 1.1;
-    this.ambient.intensity = 0.2 + dayFactor * 0.55;
+    this.sun.intensity = 0.12 + dayFactor * 1.15;
+    this.ambient.intensity = 0.18 + dayFactor * 0.55;
     const angle = ((t - 6) / 24) * Math.PI * 2;
     this.sun.position.set(Math.cos(angle) * 60, Math.max(10, Math.sin(angle) * 70), 30);
+    this.world?.setNightMode(night);
   }
 }

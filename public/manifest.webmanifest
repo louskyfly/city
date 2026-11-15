@@ -1,10 +1,18 @@
 {
   "name": "City Builder – Build Your City",
   "short_name": "CityBuilder",
-  "start_url": "/",
+  "start_url": "/city/",
+  "scope": "/city/",
   "display": "standalone",
   "orientation": "landscape",
   "background_color": "#87ceeb",
   "theme_color": "#1b2430",
-  "icons": []
+  "icons": [
+    {
+      "src": "/city/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

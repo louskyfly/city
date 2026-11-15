@@ -43,17 +43,17 @@ export const BUILDING_BY_ID = Object.fromEntries(BUILDINGS.map(b => [b.id, b])) 
 
 export const TIERS = [
   { tier: 0, name: 'Petit village', pop: 0 },
-  { tier: 1, name: 'Bourg', pop: 100 },
-  { tier: 2, name: 'Petite ville', pop: 500 },
-  { tier: 3, name: 'Grande ville', pop: 2000 },
-  { tier: 4, name: 'Métropole', pop: 6000 },
-  { tier: 5, name: 'Mégapole', pop: 15000 },
+  { tier: 1, name: 'Bourg', pop: 60 },
+  { tier: 2, name: 'Petite ville', pop: 300 },
+  { tier: 3, name: 'Grande ville', pop: 1200 },
+  { tier: 4, name: 'Métropole', pop: 4000 },
+  { tier: 5, name: 'Mégapole', pop: 10000 },
 ];
 
 export const MISSIONS: Mission[] = [
   { id: 'pop500', title: 'Village en croissance', description: 'Atteindre 500 habitants.', reward: 2000, check: s => s.population >= 500 },
   { id: 'school', title: 'Éducation pour tous', description: 'Construire une école.', reward: 500, check: (_, b) => b.some(x => x.defId === 'school') },
-  { id: 'happy80', title: 'Ville heureuse', description: 'Atteindre 80 % de satisfaction.', reward: 1500, check: s => s.happiness >= 80 },
+  { id: 'happy80', title: 'Ville heureuse', description: 'Atteindre 80 % de satisfaction (100 habitants min.).', reward: 1500, check: s => s.population >= 100 && s.happiness >= 80 },
   { id: 'mall', title: 'Cœur commerçant', description: 'Construire un centre commercial.', reward: 1200, check: (_, b) => b.some(x => x.defId === 'mall') },
   { id: 'power', title: 'Ville alimentée', description: 'Produire suffisamment d’électricité.', reward: 800, check: s => s.powerProduced >= s.powerUsed && s.powerProduced > 0 },
   { id: 'bus', title: 'Mobilité urbaine', description: 'Construire 20 routes pour structurer le réseau.', reward: 1000, check: (_, b) => b.filter(x => x.defId === 'road' || x.defId === 'bridge').length >= 20 },

@@ -1,7 +1,7 @@
 {
-  "name": "session-14ed926c-f3ed-48a7-814d-ec7985ae30da",
+  "name": "city-builder",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

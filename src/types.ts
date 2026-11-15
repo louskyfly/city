@@ -37,6 +37,8 @@ export interface PlacedBuilding {
 export interface CityStats {
   money: number;
   population: number;
+  capacity: number;
+  jobs: number;
   happiness: number;
   powerProduced: number;
   powerUsed: number;

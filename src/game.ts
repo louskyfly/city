@@ -91,12 +91,12 @@ export class Game {
   bindEvents() {
     const el = this.renderer.domElement;
     window.addEventListener('resize', () => this.onResize());
-    el.addEventListener('pointerdown', e => this.onPointerDown(e));
-    el.addEventListener('pointermove', e => this.onPointerMove(e));
-    el.addEventListener('pointerup', e => this.onPointerUp(e));
-    el.addEventListener('pointercancel', e => this.onPointerUp(e));
-    el.addEventListener('wheel', e => { e.preventDefault(); this.camDist = THREE.MathUtils.clamp(this.camDist * (1 + Math.sign(e.deltaY) * 0.08), 20, 140); }, { passive: false });
-    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('pointerdown', (e: PointerEvent) => this.onPointerDown(e));
+    el.addEventListener('pointermove', (e: PointerEvent) => this.onPointerMove(e));
+    el.addEventListener('pointerup', (e: PointerEvent) => this.onPointerUp(e));
+    el.addEventListener('pointercancel', (e: PointerEvent) => this.onPointerUp(e));
+    el.addEventListener('wheel', (e: WheelEvent) => { e.preventDefault(); this.camDist = THREE.MathUtils.clamp(this.camDist * (1 + Math.sign(e.deltaY) * 0.08), 20, 140); }, { passive: false });
+    el.addEventListener('contextmenu', (e: MouseEvent) => e.preventDefault());
   }
 
   onResize() {

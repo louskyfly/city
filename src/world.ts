@@ -201,7 +201,7 @@ export class World {
       this.previewMesh = m;
     } else {
       const g = this.createBuildingMesh(def, dummy);
-      g.traverse(o => { const m = o as THREE.Mesh; if ((m as any).material) { const mat = (m.material as THREE.Material).clone() as any; mat.transparent = true; mat.opacity = 0.5; m.material = mat; } });
+      g.traverse((o: THREE.Object3D) => { const m = o as THREE.Mesh; if ((m as any).material) { const mat = (m.material as THREE.Material).clone() as any; mat.transparent = true; mat.opacity = 0.5; m.material = mat; } });
       this.previewMesh = g;
     }
     this.scene.add(this.previewMesh);
@@ -211,7 +211,7 @@ export class World {
     if (!this.previewMesh) return;
     const p = this.cellToWorld(x, z);
     this.previewMesh.position.set(p.x, 0.05, p.z);
-    this.previewMesh.traverse(o => { const m = o as THREE.Mesh; const mat = (m as any).material; if (mat && mat.color) { mat.color.setHex(valid ? 0x7bed9f : 0xff6b6b); } });
+    this.previewMesh.traverse((o: THREE.Object3D) => { const m = o as THREE.Mesh; const mat = (m as any).material; if (mat && mat.color) { mat.color.setHex(valid ? 0x7bed9f : 0xff6b6b); } });
   }
 
   private refreshRoadMarkings() {

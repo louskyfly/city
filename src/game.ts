@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { BUILDING_BY_ID } from './data/buildings';
 import { SaveManager } from './save/SaveManager';
-import { checkMissions, computeDerived, createInitialStats } from './simulation';
+import { checkMissions, computeDerived, createDefaultPolicies, createInitialStats } from './simulation';
 import { World, TILE, GRID_SIZE } from './world';
 import { UI } from './ui';
-import type { PlacedBuilding, SaveData } from './types';
+import type { PlacedBuilding, Policies, SaveData, StatsPoint } from './types';
 
 const ISO_DIR = new THREE.Vector3(1, 1, 1).normalize();
 
@@ -18,6 +18,9 @@ export class Game {
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
   stats = createInitialStats();
+  policies: Policies = createDefaultPolicies();
+  statsHistory: StatsPoint[] = [];
+  historyAcc = 0;
   buildings: PlacedBuilding[] = [];
   completedMissions: string[] = [];
   speed = 1;
@@ -56,6 +59,9 @@ export class Game {
 
   startNew(mapId = 'plaine', showcase = false) {
     this.stats = createInitialStats();
+    this.policies = createDefaultPolicies();
+    this.statsHistory = [];
+    this.historyAcc = 0;
     this.buildings = [];
     this.completedMissions = [];
     this.mapId = mapId;
@@ -134,22 +140,26 @@ export class Game {
   }
 
   private buildShowcase() {
-    this.stats.money = 30000;
+    this.stats.money = 60000;
     this.stats.tier = 5;
     const layout: [string, number, number][] = [
-      ['power_plant', -6, -4], ['water_tower', -2, -4], ['school', 2, -4], ['town_hall', 6, -4],
-      ['house', -7, 0], ['house', -5, 0], ['house', -3, 0], ['house', -1, 0],
-      ['small_apartment', 1, 0], ['large_apartment', 3, 0], ['shop', 6, 0], ['restaurant', 8, 0],
-      ['park', -7, 3], ['green_space', -5, 3], ['factory', 1, 3], ['hospital', 4, 3],
-      ['mall', 7, 3], ['house', -3, 6], ['house', -1, 6], ['villa', 1, 6], ['stadium', 5, 6],
+      ['power_plant', -7, -4], ['water_tower', -3, -4], ['school', 0, -4], ['town_hall', 4, -4], ['hospital', 8, -4],
+      ['house', -8, 0], ['house', -7, 0], ['house', -6, 0], ['small_apartment', -5, 0],
+      ['large_apartment', -2, 0], ['shop', 1, 0], ['restaurant', 3, 0], ['supermarket', 5, 0],
+      ['park', -8, 3], ['factory', -5, 3], ['luxury_residence', -2, 3], ['mall', 2, 3],
+      ['central_park', -8, 6], ['skyscraper', 2, 6], ['stadium', 7, 3], ['business_tower', 7, 6],
+      ['power_plant', -7, 9], ['water_tower', 11, 0], ['water_tower', 11, 9],
+      ['bus_stop', -4, -5], ['bus_stop', 0, -5], ['bus_stop', 5, -5], ['bus_stop', -9, 2],
     ];
-    for (let x = -8; x <= 9; x++) if (!this.world.getOccupant(x, -6)) this.tryPlace('road', x, -6, true);
-    for (let z = -5; z <= 8; z++) if (!this.world.getOccupant(-8, z)) this.tryPlace('road', -8, z, true);
+    for (let x = -10; x <= 12; x++) if (!this.world.getOccupant(x, -6)) this.tryPlace('road', x, -6, true);
+    for (let z = -5; z <= 10; z++) if (!this.world.getOccupant(-10, z)) this.tryPlace('road', -10, z, true);
+    for (let x = -9; x <= 11; x++) if (!this.world.getOccupant(x, 2)) this.tryPlace('road', x, 2, true);
     for (const [id, x, z] of layout) {
       const def = BUILDING_BY_ID[id];
       if (!def || !this.world.isAreaFree(x, z, def.width, def.depth)) continue;
       this.tryPlace(id, x, z, true);
     }
+    this.stats.population = 320;
     this.stats.tier = 2;
     this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
     this.ui.toast('Ville d’exemple : explorez et construisez à votre tour !');
@@ -395,9 +405,11 @@ export class Game {
       if (b) this.selectBuilding(b);
     } else if (occ === 'road') {
       this.selectedUid = null;
+      this.world.hideServiceRadius();
       this.ui.showInfo('<h4>Route</h4><p>Relie les quartiers et fait circuler les véhicules.</p>');
     } else {
       this.selectedUid = null;
+      this.world.hideServiceRadius();
       this.ui.showInfo(`<h4>Terrain libre</h4><p>Case (${c.x}, ${c.z}) — constructible.</p>`);
     }
   }
@@ -421,6 +433,7 @@ export class Game {
 
     this.stats.money -= def.cost;
     this.world.syncVehicles();
+    this.world.hideServiceRadius();
     this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
     if (!quiet) this.ui.toast(`${def.name} construit.`);
     return true;
@@ -428,6 +441,7 @@ export class Game {
 
   tryBulldoze(x: number, z: number, quiet = false) {
     const res = this.world.removeAt(x, z);
+    this.world.hideServiceRadius();
     if (res.type === 'none') { if (!quiet) this.ui.toast('Rien à supprimer.'); return; }
     if (res.type === 'road') {
       const idx = this.buildings.findIndex(b => b.defId === 'road' && b.x === x && b.z === z);
@@ -486,21 +500,30 @@ export class Game {
     this.selectedUid = b.uid;
     const def = BUILDING_BY_ID[b.defId];
     if (!def) return;
-    const upCost = Math.floor(def.cost * 0.55 * b.level);
+    const maxLevel = def.maxLevel ?? 5;
+    const upCost = Math.floor(def.cost * 0.55 * Math.pow(b.level, 1.35));
     const capacity = (def.capacity || 0) * b.level;
     const jobs = (def.jobs || 0) * b.level;
-    this.ui.showInfo(`<h4>${def.name} <span class="badge">Niv. ${b.level}</span></h4>
-      <p>${def.description}</p>
+    const canUpgrade = b.level < maxLevel;
+    const radius = def.serviceRadius;
+    if (radius) {
+      const p = this.world.cellToWorld(b.x + (def.width - 1) / 2, b.z + (def.depth - 1) / 2);
+      this.world.showServiceRadius(p.x, p.z, radius, def.category === 'leisure' ? 0x53c8f0 : 0x7bed9f);
+    } else {
+      this.world.hideServiceRadius();
+    }
+    this.ui.showInfo(`<h4>${def.name} <span class="badge">Niv. ${b.level}/${maxLevel}</span></h4>
+      <p>${def.description}${radius ? ` · Rayon de service : ${radius} cases` : ''}</p>
       <div class="stat-grid">
         <div><span>Entretien</span><b>${def.upkeep * b.level} €</b></div>
         <div><span>Capacité</span><b>${capacity || '—'}</b></div>
         <div><span>Emplois</span><b>${jobs || '—'}</b></div>
-        <div><span>Électricité</span><b>${(def.powerProd || 0) - (def.powerUse || 0) || 0}</b></div>
-        <div><span>Eau</span><b>${(def.waterProd || 0) - (def.waterUse || 0) || 0}</b></div>
+        <div><span>Électricité</span><b>${(def.powerProd || 0) * b.level - (def.powerUse || 0) * b.level}</b></div>
+        <div><span>Eau</span><b>${(def.waterProd || 0) * b.level - (def.waterUse || 0) * b.level}</b></div>
         <div><span>Bonheur</span><b>${def.happiness || 0}</b></div>
       </div>
       <div class="row">
-        <button class="btn" id="upgrade-btn">Améliorer · ${upCost} €</button>
+        <button class="btn" id="upgrade-btn" ${canUpgrade ? '' : 'disabled'}>${canUpgrade ? `Améliorer · ${upCost} €` : 'Niveau max atteint'}</button>
         <button class="btn" id="move-btn">Déplacer</button>
         <button class="btn" id="recenter-btn">Recentrer</button>
       </div>`);
@@ -508,6 +531,7 @@ export class Game {
     this.ui.root.querySelector('#move-btn')?.addEventListener('click', () => {
       this.ui.tool = 'move';
       this.movingUid = b.uid;
+      this.world.hideServiceRadius();
       this.world.setPreview(b.defId);
       this.ui.syncToolButtons();
       this.ui.toast('Choisissez un nouvel emplacement.');
@@ -523,7 +547,9 @@ export class Game {
     if (!b) return;
     const def = BUILDING_BY_ID[b.defId];
     if (!def) return;
-    const cost = Math.floor(def.cost * 0.55 * b.level);
+    const maxLevel = def.maxLevel ?? 5;
+    if (b.level >= maxLevel) { this.ui.toast('Niveau maximum atteint.'); return; }
+    const cost = Math.floor(def.cost * 0.55 * Math.pow(b.level, 1.35));
     if (this.stats.money < cost) { this.ui.toast('Budget insuffisant.'); return; }
     b.level += 1;
     this.stats.money -= cost;
@@ -567,6 +593,23 @@ export class Game {
         break;
       case 'speed': this.speed = payload.speed; this.ui.setSpeedButtons(this.speed); break;
       case 'save': this.saveSlot('slot1'); this.ui.toast('Ville sauvegardée (slot1).'); break;
+      case 'save-slot': this.saveSlot(`slot${payload.slot}`); this.ui.toast(`Ville sauvegardée (slot ${payload.slot}).`); break;
+      case 'set-tax':
+        this.stats.taxRate = Math.max(0, Math.min(25, Number(payload.value) || 0));
+        this.ui.updateManagement(this.stats, this.statsHistory);
+        this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
+        break;
+      case 'toggle-policy': {
+        const key = payload.policy as keyof Policies;
+        if (key in this.policies) {
+          this.policies[key] = !this.policies[key];
+          this.ui.toast(`${key === 'green' ? 'Ville verte' : key === 'transport' ? 'Transport public' : 'Recyclage'} ${this.policies[key] ? 'activé' : 'désactivé'}.`);
+        }
+        this.ui.updateManagement(this.stats, this.statsHistory);
+        break;
+      }
+      case 'open-management': this.ui.renderManagement(this.stats, this.policies, this.statsHistory); break;
+      case 'open-missions': this.ui.renderMissions(this.completedMissions); break;
       case 'recenter': this.camTarget.set(0, 0, 0); this.zoomFactor = 1; this.onResize(); this.ui.toast('Vue recentrée.'); break;
       case 'toggle-weather': {
         const w = this.world?.weather === 'rain' ? 'clear' : 'rain';
@@ -581,6 +624,9 @@ export class Game {
 
   loadData(data: SaveData) {
     this.stats = { ...createInitialStats(), ...(data.stats || {}) };
+    this.policies = { ...createDefaultPolicies(), ...(data.policies || {}) };
+    this.statsHistory = data.statsHistory || [];
+    this.historyAcc = 0;
     this.buildings = data.buildings || [];
     this.completedMissions = data.completedMissions || [];
     this.mapId = data.mapId || 'plaine';
@@ -592,12 +638,14 @@ export class Game {
   saveData(slot: string) {
     const roads = this.buildings.filter(b => b.defId === 'road').map(b => ({ x: b.x, z: b.z }));
     const data: SaveData = {
-      version: 2,
+      version: 3,
       timestamp: Date.now(),
       mapId: this.mapId,
       buildings: this.buildings,
       roads,
       stats: this.stats,
+      policies: this.policies,
+      statsHistory: this.statsHistory,
       unlockedMissions: [],
       completedMissions: this.completedMissions,
     };
@@ -622,16 +670,29 @@ export class Game {
   }
 
   tick() {
-    const derived = computeDerived(this.buildings, this.stats);
+    const derived = computeDerived(this.buildings, this.stats, this.policies);
     this.stats = derived.stats;
+    this.historyAcc += 1;
+    if (this.historyAcc >= 3) {
+      this.historyAcc = 0;
+      this.statsHistory.push({
+        day: this.stats.day,
+        population: this.stats.population,
+        money: Math.round(this.stats.money),
+        happiness: this.stats.happiness,
+      });
+      if (this.statsHistory.length > 180) this.statsHistory.shift();
+    }
     const res = checkMissions(this.stats, this.buildings, this.completedMissions);
     if (res.newlyCompleted.length) {
       this.completedMissions.push(...res.newlyCompleted);
       this.stats.money += res.reward;
       this.ui.toast(`Mission accomplie · +${res.reward} €`);
+      this.ui.renderMissions(this.completedMissions);
     }
     this.world.syncVehicles();
     this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
+    this.ui.updateManagement(this.stats, this.statsHistory);
     if (this.selectedUid) {
       const b = this.buildings.find(x => x.uid === this.selectedUid);
       if (b) this.selectBuilding(b);

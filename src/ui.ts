@@ -1,5 +1,5 @@
 import { BUILDINGS, MISSIONS, TIERS } from './data/buildings';
-import type { BuildingCategory, CityStats } from './types';
+import type { BuildingCategory, CityStats, Policies, StatsPoint } from './types';
 import { tierName } from './simulation';
 
 export type Screen = 'menu' | 'game' | 'load' | 'settings' | 'newmap';
@@ -127,6 +127,7 @@ export class UI {
           <div class="tabs" id="tabs"></div>
           <div class="catalog" id="catalog"></div>
           <div class="catalog" id="missions" style="display:none"></div>
+          <div class="catalog" id="management" style="display:none"></div>
           <div class="sidebar-footer" id="city-summary"></div>
         </div>
         <div class="info-panel" id="info-panel">
@@ -186,21 +187,29 @@ export class UI {
     const tabs = this.root.querySelector('#tabs');
     if (!tabs) return;
     const missionsVisible = (this.root.querySelector('#missions') as HTMLElement | null)?.style.display === 'grid';
-    tabs.innerHTML = cats.map(c => `<button class="tab ${!missionsVisible && c.id === this.activeCategory ? 'active' : ''}" data-cat="${c.id}">${c.label}</button>`).join('')
-      + `<button class="tab ${missionsVisible ? 'active' : ''}" data-cat="missions">Missions</button>`;
+    const managementVisible = (this.root.querySelector('#management') as HTMLElement | null)?.style.display === 'grid';
+    tabs.innerHTML = cats.map(c => `<button class="tab ${!missionsVisible && !managementVisible && c.id === this.activeCategory ? 'active' : ''}" data-cat="${c.id}">${c.label}</button>`).join('')
+      + `<button class="tab ${missionsVisible ? 'active' : ''}" data-cat="missions">Missions</button>`
+      + `<button class="tab ${managementVisible ? 'active' : ''}" data-cat="management">Gestion</button>`;
     tabs.querySelectorAll('.tab').forEach(el => el.addEventListener('click', () => {
       const cat = (el as HTMLElement).dataset.cat!;
       const catalog = this.root.querySelector('#catalog') as HTMLElement | null;
       const missions = this.root.querySelector('#missions') as HTMLElement | null;
-      if (!catalog || !missions) return;
+      const management = this.root.querySelector('#management') as HTMLElement | null;
+      if (!catalog || !missions || !management) return;
+      catalog.style.display = 'none';
+      missions.style.display = 'none';
+      management.style.display = 'none';
       if (cat === 'missions') {
-        catalog.style.display = 'none';
         missions.style.display = 'grid';
         this.renderMissions(this.lastCompleted);
+        this.onAction('open-missions');
+      } else if (cat === 'management') {
+        management.style.display = 'grid';
+        this.onAction('open-management');
       } else {
         this.activeCategory = cat as BuildingCategory;
         catalog.style.display = 'grid';
-        missions.style.display = 'none';
         this.renderCatalog(this.lastTier);
       }
       this.renderTabs();
@@ -240,6 +249,120 @@ export class UI {
         <div class="meta">${m.description}</div>
         <div class="meta">Récompense : ${m.reward} €</div>
       </div>`).join('');
+  }
+
+  renderManagement(stats: CityStats, policies: Policies, history: StatsPoint[]) {
+    const el = this.root.querySelector('#management');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="mg-section">
+        <div class="mg-title">Fiscalité</div>
+        <div class="mg-tax-row">
+          <input id="mg-tax" type="range" min="0" max="25" step="1" value="${stats.taxRate}" class="mg-slider" aria-label="Taux d'imposition">
+          <b id="mg-tax-value">${stats.taxRate} %</b>
+        </div>
+        <div class="small">Des impôts élevés augmentent les revenus mais réduisent le bonheur.</div>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Politiques</div>
+        <button class="mg-policy ${policies.green ? 'active' : ''}" data-policy="green">
+          <b>Ville verte</b><span>−20 % pollution · bonheur · coût d’entretien</span>
+        </button>
+        <button class="mg-policy ${policies.transport ? 'active' : ''}" data-policy="transport">
+          <b>Transport public</b><span>Réduit la pénalité de circulation · bonheur</span>
+        </button>
+        <button class="mg-policy ${policies.recycling ? 'active' : ''}" data-policy="recycling">
+          <b>Recyclage</b><span>−28 % pollution · coût d’entretien</span>
+        </button>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Qualité de vie</div>
+        <div class="mg-grid">
+          <div><span>Pollution</span><b id="mg-pollution">${stats.pollution}</b></div>
+          <div><span>Bruit</span><b id="mg-noise">${stats.noise}</b></div>
+          <div><span>Écoles</span><b id="mg-school">${stats.schoolCoverage} %</b></div>
+          <div><span>Santé</span><b id="mg-health">${stats.healthCoverage} %</b></div>
+          <div><span>Loisirs</span><b id="mg-leisure">${stats.leisureCoverage} %</b></div>
+          <div><span>Sécurité</span><b id="mg-safety">${stats.safetyCoverage} %</b></div>
+          <div><span>Bus</span><b id="mg-bus">${stats.busCoverage} %</b></div>
+          <div><span>Bonheur</span><b id="mg-happiness">${stats.happiness} %</b></div>
+        </div>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Budget / tick</div>
+        <div class="mg-grid">
+          <div><span>Revenus</span><b class="good" id="mg-income">+${stats.income} €</b></div>
+          <div><span>Dépenses</span><b class="bad" id="mg-expenses">−${stats.expenses} €</b></div>
+          <div><span>Solde</span><b id="mg-balance">${stats.income - stats.expenses >= 0 ? '+' : ''}${stats.income - stats.expenses} €</b></div>
+          <div><span>Trésorerie</span><b id="mg-money">${Math.round(stats.money)} €</b></div>
+        </div>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Population</div>
+        <div class="mg-spark" id="mg-spark">${this.sparkline(history)}</div>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Sauvegardes</div>
+        <div class="row">
+          <button class="btn" data-save-slot="1">Slot 1</button>
+          <button class="btn" data-save-slot="2">Slot 2</button>
+          <button class="btn" data-save-slot="3">Slot 3</button>
+        </div>
+        <div class="small">Sauvegarde automatique toutes les 25 s. Les slots manuels restent disponibles dans « Charger une ville ».</div>
+      </div>`;
+    const slider = el.querySelector('#mg-tax') as HTMLInputElement | null;
+    slider?.addEventListener('input', () => {
+      const label = el.querySelector('#mg-tax-value');
+      if (label) label.textContent = `${slider.value} %`;
+      this.onAction('set-tax', { value: Number(slider.value) });
+    });
+    el.querySelectorAll('[data-policy]').forEach(btn => btn.addEventListener('click', () => {
+      btn.classList.toggle('active');
+      this.onAction('toggle-policy', { policy: (btn as HTMLElement).dataset.policy });
+    }));
+    el.querySelectorAll('[data-save-slot]').forEach(btn => btn.addEventListener('click', () => {
+      this.onAction('save-slot', { slot: Number((btn as HTMLElement).dataset.saveSlot) });
+    }));
+  }
+
+  updateManagement(stats: CityStats, history: StatsPoint[]) {
+    const el = this.root.querySelector('#management') as HTMLElement | null;
+    if (!el || el.style.display === 'none') return;
+    const set = (id: string, value: string) => {
+      const node = el.querySelector('#' + id);
+      if (node) node.textContent = value;
+    };
+    set('mg-pollution', `${stats.pollution}`);
+    set('mg-noise', `${stats.noise}`);
+    set('mg-school', `${stats.schoolCoverage} %`);
+    set('mg-health', `${stats.healthCoverage} %`);
+    set('mg-leisure', `${stats.leisureCoverage} %`);
+    set('mg-safety', `${stats.safetyCoverage} %`);
+    set('mg-bus', `${stats.busCoverage} %`);
+    set('mg-happiness', `${stats.happiness} %`);
+    set('mg-income', `+${stats.income} €`);
+    set('mg-expenses', `−${stats.expenses} €`);
+    const balance = stats.income - stats.expenses;
+    set('mg-balance', `${balance >= 0 ? '+' : ''}${balance} €`);
+    set('mg-money', `${Math.round(stats.money)} €`);
+    const spark = el.querySelector('#mg-spark');
+    if (spark) spark.innerHTML = this.sparkline(history, false);
+  }
+
+  private sparkline(history: StatsPoint[], showEmpty = true): string {
+    const pts = history.slice(-60);
+    if (pts.length < 2) {
+      return showEmpty ? '<div class="small">Données en cours de collecte…</div>' : '';
+    }
+    const w = 300, h = 54;
+    const max = Math.max(10, ...pts.map(p => p.population));
+    const step = w / (pts.length - 1);
+    const poly = pts.map((p, i) => `${(i * step).toFixed(1)},${(h - (p.population / max) * (h - 6) - 3).toFixed(1)}`).join(' ');
+    const last = pts[pts.length - 1];
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:54px;display:block">
+      <polyline points="${poly}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+    </svg>
+    <div class="small" style="display:flex;justify-content:space-between"><span>J${pts[0].day}</span><span>${last.population} hab.</span><span>J${last.day}</span></div>`;
   }
 
   updateHUD(stats: CityStats, completedMissions: string[], weather?: string) {

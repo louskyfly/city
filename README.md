@@ -45,10 +45,23 @@ via GitHub Actions.
 - Grille de 64 × 64 cases.
 - Catalogue : résidentiel, commercial, industriel, services, loisirs,
   infrastructures, avec **déblocage par palier**.
+- **Grands bâtiments** : résidence de luxe, gratte-ciel résidentiel, tour de
+  bureaux, université, parc central, centre commercial, stade.
 - Placement avec aperçu et validation de l'emplacement.
 - Routes posables en continu (glisser), trottoirs et marquages.
-- Sélection d'un bâtiment : fiche détaillée, **amélioration**, **déplacement**,
+- Sélection d'un bâtiment : rayon de service affiché, fiche détaillée,
+  **amélioration jusqu'au niveau 5** (le bâtiment grandit), **déplacement**,
   **suppression**, recentrage.
+
+### Gestion de la ville
+- Onglet **Gestion** : taux d'imposition réglable, politiques publiques
+  (ville verte, transport public, recyclage), qualité de vie, budget par tick,
+  courbe de population et sauvegardes manuelles.
+- Couverture des services (écoles, santé, loisirs, sécurité, bus) calculée par
+  rayon autour des bâtiments et visible sur la carte.
+- Pollution et bruit générés par l'industrie et les commerces, réduits par les
+  parcs et les politiques.
+- Missions étendues (population, services, transports, skyline, air pur…).
 
 ### Simulation
 - Économie : budget, coûts de construction, entretien, revenus, faillite possible.
@@ -71,7 +84,8 @@ via GitHub Actions.
 - Brouillard et ambiance météo.
 
 ### Sauvegardes
-- Sauvegarde automatique toutes les 25 secondes + sauvegarde manuelle.
+- Sauvegarde automatique toutes les 25 secondes.
+- **3 emplacements manuels** (Slot 1/2/3) depuis l'onglet Gestion.
 - Chargement, suppression, reprise de la dernière ville.
 - Données stockées localement (`localStorage`), avec récupération défensive en
   cas de sauvegarde invalide.

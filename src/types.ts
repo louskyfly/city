@@ -19,6 +19,9 @@ export interface BuildingDef {
   waterProd?: number;
   happiness?: number;
   pollution?: number;
+  noise?: number;
+  serviceRadius?: number;
+  maxLevel?: number;
   unlockTier: number;
   description: string;
 }
@@ -44,9 +47,32 @@ export interface CityStats {
   powerUsed: number;
   waterProduced: number;
   waterUsed: number;
+  pollution: number;
+  noise: number;
+  schoolCoverage: number;
+  healthCoverage: number;
+  leisureCoverage: number;
+  safetyCoverage: number;
+  busCoverage: number;
+  taxRate: number;
+  income: number;
+  expenses: number;
   tier: number;
   day: number;
   timeOfDay: number; // 0..24
+}
+
+export interface Policies {
+  green: boolean;
+  transport: boolean;
+  recycling: boolean;
+}
+
+export interface StatsPoint {
+  day: number;
+  population: number;
+  money: number;
+  happiness: number;
 }
 
 export interface SaveData {
@@ -56,6 +82,8 @@ export interface SaveData {
   buildings: PlacedBuilding[];
   roads: { x: number; z: number }[];
   stats: CityStats;
+  policies: Policies;
+  statsHistory: StatsPoint[];
   unlockedMissions: string[];
   completedMissions: string[];
 }

@@ -35,6 +35,7 @@ export class World {
   private clearedCells = new Set<string>();
   private flora: FloraEntry[] = [];
   private floraGroup = new THREE.Group();
+  private radiusGroup = new THREE.Group();
   private windowTexture: THREE.Texture | null = null;
   private occupancy = new Map<string, string>();
   private trafficLights: THREE.Group[] = [];
@@ -47,7 +48,7 @@ export class World {
   constructor(scene: THREE.Scene, mapId = 'plaine') {
     this.scene = scene;
     this.mapId = mapId;
-    this.scene.add(this.buildingsGroup, this.roadsGroup, this.decorGroup, this.vehiclesGroup, this.effectsGroup, this.floraGroup);
+    this.scene.add(this.buildingsGroup, this.roadsGroup, this.decorGroup, this.vehiclesGroup, this.effectsGroup, this.floraGroup, this.radiusGroup);
     this.buildTerrain();
     this.addEnvironment();
     this.addInteriorFlora();
@@ -387,8 +388,14 @@ export class World {
     g.userData.uid = b.uid;
     const w = def.width * TILE * 0.82;
     const d = def.depth * TILE * 0.82;
-    const h = def.height * 1.5 * (1 + (b.level - 1) * 0.06);
-    if (def.category === 'infrastructure') return this.createInfraMesh(def);
+    const h = def.height * 1.5 * (1 + (b.level - 1) * 0.14);
+    if (def.category === 'infrastructure') {
+      const mesh = this.createInfraMesh(def);
+      mesh.userData.uid = b.uid;
+      const p = this.cellToWorld(b.x + (def.width - 1) / 2, b.z + (def.depth - 1) / 2);
+      mesh.position.set(p.x, 0, p.z);
+      return mesh;
+    }
 
     const isLeisure = def.category === 'leisure';
     const bodyMat = new THREE.MeshStandardMaterial({ color: isLeisure ? 0x7bc96f : def.color, roughness: 0.75 });
@@ -443,6 +450,48 @@ export class World {
       addFacade(0, -d / 2 - 0.015, Math.PI, w * 0.96);
       addFacade(w / 2 + 0.015, 0, Math.PI / 2, d * 0.96);
       addFacade(-w / 2 - 0.015, 0, -Math.PI / 2, d * 0.96);
+
+      // Balconies give tall residential buildings depth and personality.
+      if (def.category === 'residential' && h >= 3) {
+        const floors = Math.max(2, Math.round(def.height));
+        const balconyMat = new THREE.MeshStandardMaterial({ color: def.roofColor, roughness: 0.7 });
+        for (let f = 1; f < floors; f += 2) {
+          const by = 0.55 + (h / floors) * f * 0.92;
+          if (by > h - 0.2) continue;
+          for (const side of [-1, 1]) {
+            const balcony = new THREE.Mesh(new THREE.BoxGeometry(w * 0.3, 0.06, 0.22), balconyMat);
+            balcony.position.set(side * w * 0.22, by, d / 2 + 0.12);
+            balcony.castShadow = true;
+            g.add(balcony);
+          }
+        }
+      }
+    }
+
+    // Roof details
+    if (def.id === 'hospital') {
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w, d) * 0.26, Math.min(w, d) * 0.26, 0.06, 20), new THREE.MeshStandardMaterial({ color: 0xcdd7de }));
+      pad.position.y = h + 0.13; g.add(pad);
+      const hMat = new THREE.MeshBasicMaterial({ color: 0xe74c3c });
+      const barA = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.02), hMat);
+      barA.position.set(-0.09, h + 0.18, Math.min(w, d) * 0.08); g.add(barA);
+      const barB = barA.clone(); barB.position.x = 0.09; g.add(barB);
+      const cross = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.06, 0.02), hMat);
+      cross.position.set(0, h + 0.18, Math.min(w, d) * 0.08); g.add(cross);
+    }
+    if (def.id === 'mall') {
+      const glass = new THREE.MeshStandardMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.65, roughness: 0.2 });
+      for (let i = -1; i <= 1; i++) {
+        const sky = new THREE.Mesh(new THREE.BoxGeometry(w * 0.2, 0.08, d * 0.2), glass);
+        sky.position.set(i * w * 0.26, h + 0.15, 0);
+        g.add(sky);
+      }
+    }
+    if (['large_apartment', 'modern_residence', 'luxury_residence'].includes(def.id)) {
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10), new THREE.MeshStandardMaterial({ color: 0xc9d2d9 }));
+      tank.position.set(-w * 0.22, h + 0.2, -d * 0.2); g.add(tank);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.025, 0.9, 5), new THREE.MeshStandardMaterial({ color: 0x90a4ae }));
+      mast.position.set(w * 0.28, h + 0.45, d * 0.2); g.add(mast);
     }
 
     const door = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.52), new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 0.8 }));
@@ -494,8 +543,75 @@ export class World {
     return g;
   }
 
-  private facadeStyle(def: any): { x: number; y: number; tint: number } {
-    if (def.category === 'industrial') return { x: 1.35, y: 1.3, tint: 0xbfc9cf };
+  private createTowerMesh(def: any, b: PlacedBuilding): THREE.Group {
+    const g = new THREE.Group();
+    g.userData.uid = b.uid;
+    const baseW = def.width * TILE * 0.82;
+    const baseD = def.depth * TILE * 0.82;
+    const totalH = def.height * 1.5 * (1 + (b.level - 1) * 0.14);
+    const tiers = b.level >= 3 ? 3 : 2;
+    const segH = totalH / tiers;
+    const tint = def.id === 'business_tower' ? 0x8fc6e8 : 0x9fc0d6;
+    let y = 0, cw = baseW, cd = baseD;
+    for (let i = 0; i < tiers; i++) {
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(cw, segH, cd),
+        new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.5, metalness: 0.18 })
+      );
+      body.position.y = y + segH / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+      const fh = segH * 0.86;
+      this.addGlassFacade(g, 0, cd / 2 + 0.015, 0, cw * 0.94, fh, y + segH / 2, tint);
+      this.addGlassFacade(g, 0, -cd / 2 - 0.015, Math.PI, cw * 0.94, fh, y + segH / 2, tint);
+      this.addGlassFacade(g, cw / 2 + 0.015, 0, Math.PI / 2, cd * 0.94, fh, y + segH / 2, tint);
+      this.addGlassFacade(g, -cw / 2 - 0.015, 0, -Math.PI / 2, cd * 0.94, fh, y + segH / 2, tint);
+      const colMat = new THREE.MeshStandardMaterial({ color: 0xd7e2ea, roughness: 0.5 });
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const col = new THREE.Mesh(new THREE.BoxGeometry(0.08, segH, 0.08), colMat);
+        col.position.set(sx * cw / 2, y + segH / 2, sz * cd / 2);
+        g.add(col);
+      }
+      const parapet = new THREE.Mesh(new THREE.BoxGeometry(cw * 1.04, 0.08, cd * 1.04), new THREE.MeshStandardMaterial({ color: def.roofColor }));
+      parapet.position.y = y + segH;
+      g.add(parapet);
+      y += segH;
+      cw *= 0.76;
+      cd *= 0.76;
+    }
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.06, 1.5, 6), new THREE.MeshStandardMaterial({ color: 0xc9d2d9, metalness: 0.5 }));
+    mast.position.y = y + 0.75;
+    g.add(mast);
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshStandardMaterial({ color: 0xff5252, emissive: 0xff1744, emissiveIntensity: 1 }));
+    beacon.position.y = y + 1.52;
+    g.add(beacon);
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(baseW * 1.04, 0.1, baseD * 1.04), new THREE.MeshStandardMaterial({ color: 0xaeb8c0 }));
+    plinth.position.y = 0.05;
+    plinth.receiveShadow = true;
+    g.add(plinth);
+    const p = this.cellToWorld(b.x + (def.width - 1) / 2, b.z + (def.depth - 1) / 2);
+    g.position.set(p.x, 0, p.z);
+    return g;
+  }
+
+  private addGlassFacade(g: THREE.Group, px: number, pz: number, ry: number, fw: number, fh: number, y: number, tint: number) {
+    const tex = this.getWindowTexture().clone();
+    tex.needsUpdate = true;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(1, Math.round(fw / 1.1)), Math.max(1, Math.round(fh / 1.15)));
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex, alphaTest: 0.35, roughness: 0.22, metalness: 0.2,
+      emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0, color: tint,
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), mat);
+    plane.position.set(px, y, pz);
+    plane.rotation.y = ry;
+    plane.userData.window = true;
+    g.add(plane);
+  }
+
+  private facadeStyle(def: any): { x: number; y: number; tint: number } {    if (def.category === 'industrial') return { x: 1.35, y: 1.3, tint: 0xbfc9cf };
     if (def.category === 'commercial') return { x: 1.15, y: 1.0, tint: 0x8fd3ff };
     if (def.id === 'house' || def.id === 'villa') return { x: 0.95, y: 1.05, tint: 0xfff3cf };
     if (def.category === 'residential') return { x: 0.62, y: 0.78, tint: 0xdfefff };
@@ -507,6 +623,37 @@ export class World {
     const d = def.depth * TILE * 0.82;
     const g = new THREE.Group();
     const p = this.cellToWorld(b.x + (def.width - 1) / 2, b.z + (def.depth - 1) / 2);
+
+    if (def.id === 'skyscraper' || def.id === 'business_tower') {
+      return this.createTowerMesh(def, b);
+    }
+
+    if (def.id === 'central_park') {
+      const grass = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 1 }));
+      grass.position.y = 0.04; grass.receiveShadow = true; g.add(grass);
+      const pathMat = new THREE.MeshStandardMaterial({ color: 0xdfd3b0, roughness: 1 });
+      const pathA = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.14, d * 0.94), pathMat);
+      pathA.rotation.x = -Math.PI / 2; pathA.position.y = 0.085; g.add(pathA);
+      const pathB = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.94, d * 0.14), pathMat);
+      pathB.rotation.x = -Math.PI / 2; pathB.position.y = 0.085; g.add(pathB);
+      const pond = new THREE.Mesh(new THREE.CircleGeometry(w * 0.16, 24), new THREE.MeshStandardMaterial({ color: 0x3aa0d8, roughness: 0.1, metalness: 0.25 }));
+      pond.rotation.x = -Math.PI / 2;
+      pond.position.set(-w * 0.26, 0.09, -d * 0.24);
+      g.add(pond);
+      for (let i = 0; i < 16; i++) {
+        const tree = new THREE.Group();
+        this.addTree(tree, (Math.random() - 0.5) * w * 0.82, (Math.random() - 0.5) * d * 0.82);
+        tree.scale.setScalar(0.75 + Math.random() * 0.4);
+        g.add(tree);
+      }
+      for (let i = 0; i < 4; i++) {
+        const bench = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.07, 0.12), new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+        bench.position.set((Math.random() - 0.5) * w * 0.6, 0.14, (Math.random() - 0.5) * d * 0.6);
+        g.add(bench);
+      }
+      g.position.set(p.x, 0, p.z);
+      return g;
+    }
 
     if (def.id === 'water_tower') {
       const legMat = new THREE.MeshStandardMaterial({ color: 0xc9d2d9, roughness: 0.7 });
@@ -645,6 +792,23 @@ export class World {
 
   private createInfraMesh(def: any): THREE.Group {
     const g = new THREE.Group();
+    if (def.id === 'bus_stop') {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.85, 6), new THREE.MeshStandardMaterial({ color: 0x95a5a6 }));
+      pole.position.set(0.2, 0.43, 0); g.add(pole);
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.05), new THREE.MeshStandardMaterial({ color: 0x0984e3 }));
+      sign.position.set(0.2, 0.8, 0.03); g.add(sign);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.04, 0.02), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      stripe.position.set(0.2, 0.8, 0.06); g.add(stripe);
+      const shelterRoof = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), new THREE.MeshStandardMaterial({ color: 0x3498db, metalness: 0.2 }));
+      shelterRoof.position.set(-0.1, 0.62, 0); g.add(shelterRoof);
+      for (const sx of [-0.45, 0.25]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.6, 5), new THREE.MeshStandardMaterial({ color: 0xbdc3c7 }));
+        post.position.set(sx, 0.31, 0.2); g.add(post);
+      }
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.16), new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+      bench.position.set(-0.1, 0.22, -0.05); g.add(bench);
+      return g;
+    }
     if (def.id === 'road' || def.id === 'bridge') {
       const h = def.id === 'bridge' ? 0.32 : 0.05;
       const slab = new THREE.Mesh(new THREE.BoxGeometry(TILE * 0.95, h, TILE * 0.95), new THREE.MeshStandardMaterial({ color: def.color }));
@@ -949,4 +1113,31 @@ export class World {
   }
 
   getBuildingMeshes() { return this.buildingMeshes; }
+
+  showServiceRadius(x: number, z: number, radiusCells: number, color = 0x7bed9f) {
+    this.hideServiceRadius();
+    const radius = radiusCells * TILE;
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(radius, 64),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide })
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.set(x, 0.035, z);
+    this.radiusGroup.add(disc);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius - 0.12, radius, 64),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 0.036, z);
+    this.radiusGroup.add(ring);
+  }
+
+  hideServiceRadius() {
+    while (this.radiusGroup.children.length) {
+      const child = this.radiusGroup.children.pop() as THREE.Mesh;
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+    }
+  }
 }

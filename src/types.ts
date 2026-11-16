@@ -49,6 +49,7 @@ export interface CityStats {
   waterUsed: number;
   pollution: number;
   noise: number;
+  traffic: number;
   schoolCoverage: number;
   healthCoverage: number;
   leisureCoverage: number;

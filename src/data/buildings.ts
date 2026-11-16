@@ -17,6 +17,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'mall', name: 'Centre commercial', category: 'commercial', cost: 1800, upkeep: 25, width: 3, depth: 3, height: 2.6, color: 0xa29bfe, roofColor: 0x6c5ce7, jobs: 80, powerUse: 18, waterUse: 8, happiness: 6, noise: 8, unlockTier: 3, maxLevel: 5, description: 'Pôle commercial majeur avec verrière.' },
   { id: 'gas_station', name: 'Station-service', category: 'commercial', cost: 450, upkeep: 8, width: 2, depth: 1, height: 0.8, color: 0xffeaa7, roofColor: 0xfdcb6e, jobs: 5, powerUse: 3, waterUse: 2, happiness: 1, pollution: 2, noise: 4, unlockTier: 2, maxLevel: 3, description: 'Carburant pour la circulation.' },
   { id: 'business_tower', name: 'Tour de bureaux', category: 'commercial', cost: 6000, upkeep: 48, width: 3, depth: 3, height: 8, color: 0xb8c6d6, roofColor: 0x2c3e50, jobs: 220, powerUse: 30, waterUse: 12, happiness: 2, noise: 6, unlockTier: 5, maxLevel: 5, description: 'Centre d’affaires de la métropole.' },
+  { id: 'hotel', name: 'Hôtel', category: 'commercial', cost: 1600, upkeep: 22, width: 2, depth: 2, height: 3.2, color: 0xe8d8c3, roofColor: 0x8e5b3a, jobs: 40, powerUse: 12, waterUse: 8, happiness: 3, noise: 5, unlockTier: 3, maxLevel: 5, description: 'Accueille visiteurs et événements.' },
 
   // -------------------------------------------------------------- Industrial
   { id: 'factory', name: 'Usine', category: 'industrial', cost: 800, upkeep: 18, width: 2, depth: 2, height: 2.2, color: 0xb2bec3, roofColor: 0x636e72, jobs: 40, powerUse: 15, waterUse: 8, happiness: -4, pollution: 12, noise: 12, unlockTier: 1, maxLevel: 4, description: 'Production industrielle et emplois.' },
@@ -31,6 +32,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'police_station', name: 'Commissariat', category: 'services', cost: 450, upkeep: 14, width: 1, depth: 2, height: 1.8, color: 0x74b9ff, roofColor: 0x2d3436, jobs: 10, powerUse: 4, waterUse: 2, happiness: 5, serviceRadius: 9, unlockTier: 2, maxLevel: 3, description: 'Sécurité des quartiers.' },
   { id: 'town_hall', name: 'Mairie', category: 'services', cost: 700, upkeep: 16, width: 2, depth: 2, height: 2.2, color: 0xf9e79f, roofColor: 0x7d6608, jobs: 15, powerUse: 5, waterUse: 3, happiness: 4, serviceRadius: 12, unlockTier: 2, maxLevel: 4, description: 'Administration de la ville.' },
   { id: 'university', name: 'Université', category: 'services', cost: 2500, upkeep: 35, width: 3, depth: 2, height: 2.8, color: 0xf5e6c8, roofColor: 0x6c5ce7, jobs: 45, powerUse: 14, waterUse: 8, happiness: 9, serviceRadius: 14, unlockTier: 4, maxLevel: 4, description: 'Enseignement supérieur et recherche.' },
+  { id: 'train_station', name: 'Gare', category: 'services', cost: 2500, upkeep: 30, width: 2, depth: 2, height: 2.2, color: 0xd8dee3, roofColor: 0x34495e, jobs: 25, powerUse: 12, waterUse: 6, happiness: 8, noise: 6, serviceRadius: 12, unlockTier: 3, maxLevel: 3, description: 'Connecte la ville au réseau régional.' },
   { id: 'water_tower', name: 'Château d’eau', category: 'services', cost: 600, upkeep: 12, width: 1, depth: 1, height: 3.2, color: 0x81ecec, roofColor: 0x00cec9, jobs: 3, powerUse: 6, waterProd: 100, unlockTier: 0, maxLevel: 4, description: 'Alimente la ville en eau.' },
 
   // ----------------------------------------------------------------- Leisure
@@ -40,6 +42,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'stadium', name: 'Stade', category: 'leisure', cost: 2200, upkeep: 40, width: 3, depth: 3, height: 1.8, color: 0xdfe6e9, roofColor: 0x0984e3, jobs: 30, powerUse: 20, waterUse: 12, happiness: 14, noise: 10, serviceRadius: 12, unlockTier: 4, maxLevel: 3, description: 'Grands événements sportifs.' },
   { id: 'cinema', name: 'Cinéma', category: 'leisure', cost: 700, upkeep: 12, width: 2, depth: 1, height: 1.8, color: 0x6c5ce7, roofColor: 0x2d3436, jobs: 10, powerUse: 8, waterUse: 3, happiness: 7, noise: 5, serviceRadius: 8, unlockTier: 2, maxLevel: 3, description: 'Divertissement culturel.' },
   { id: 'sports_center', name: 'Centre sportif', category: 'leisure', cost: 900, upkeep: 18, width: 2, depth: 2, height: 1.6, color: 0x00cec9, roofColor: 0x0984e3, jobs: 12, powerUse: 10, waterUse: 6, happiness: 9, serviceRadius: 8, unlockTier: 3, maxLevel: 3, description: 'Santé et loisirs.' },
+  { id: 'amusement_park', name: 'Parc d’attractions', category: 'leisure', cost: 3500, upkeep: 45, width: 3, depth: 3, height: 1.8, color: 0xfdcb6e, roofColor: 0xe17055, jobs: 40, powerUse: 25, waterUse: 10, happiness: 18, noise: 12, serviceRadius: 14, unlockTier: 4, maxLevel: 3, description: 'Attraction majeure pour toute la métropole.' },
 
   // ---------------------------------------------------------- Infrastructure
   { id: 'road', name: 'Route', category: 'infrastructure', cost: 20, upkeep: 1, width: 1, depth: 1, height: 0.05, color: 0x636e72, roofColor: 0x636e72, unlockTier: 0, maxLevel: 1, description: 'Permet la circulation et dessert les bâtiments.' },
@@ -76,5 +79,7 @@ export const MISSIONS: Mission[] = [
   { id: 'green', title: 'Ville verte', description: 'Construire 5 espaces verts ou parcs.', reward: 1200, check: (_, b) => b.filter(x => ['park', 'green_space', 'central_park'].includes(x.defId)).length >= 5 },
   { id: 'transit', title: 'Transports publics', description: 'Installer 4 arrêts de bus.', reward: 1000, check: (_, b) => b.filter(x => x.defId === 'bus_stop').length >= 4 },
   { id: 'skyline', title: 'Ligne d’horizon', description: 'Construire un gratte-ciel.', reward: 6000, check: (_, b) => b.some(x => x.defId === 'skyscraper' || x.defId === 'business_tower') },
+  { id: 'tourism', title: 'Ville attractive', description: 'Construire un hôtel et un parc d’attractions.', reward: 4000, check: (_, b) => b.some(x => x.defId === 'hotel') && b.some(x => x.defId === 'amusement_park') },
+  { id: 'rail', title: 'Ouverture au monde', description: 'Construire une gare.', reward: 1800, check: (_, b) => b.some(x => x.defId === 'train_station') },
   { id: 'clean', title: 'Air pur', description: 'Avoir une pollution inférieure à 20 avec 500 habitants.', reward: 3000, check: s => s.population >= 500 && s.pollution < 20 },
 ];

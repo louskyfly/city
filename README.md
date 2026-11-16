@@ -38,6 +38,7 @@ via GitHub Actions.
   sélectionner/placer.
 - **Tactile** : un doigt pour déplacer/toucher, deux doigts pour zoomer et
   déplacer la vue. La vue reste isométrique.
+- **Pause** : bouton Pause ou `Espace`, avec écran de pause et reprise.
 - Raccourcis : `Échap` annule l'outil en cours, `Espace` met en pause, `R`
   recentre la caméra.
 
@@ -46,9 +47,12 @@ via GitHub Actions.
 - Catalogue : résidentiel, commercial, industriel, services, loisirs,
   infrastructures, avec **déblocage par palier**.
 - **Grands bâtiments** : résidence de luxe, gratte-ciel résidentiel, tour de
-  bureaux, université, parc central, centre commercial, stade.
+  bureaux, hôtel, gare, université, parc d'attractions, parc central, centre
+  commercial et stade.
 - Placement avec aperçu et validation de l'emplacement.
+- **Démolition avec remboursement partiel** (30 % de la valeur, selon le niveau).
 - Routes posables en continu (glisser), trottoirs et marquages.
+- Arrêts de bus uniquement au bord d'une route, pour former de vraies lignes.
 - Sélection d'un bâtiment : rayon de service affiché, fiche détaillée,
   **amélioration jusqu'au niveau 5** (le bâtiment grandit), **déplacement**,
   **suppression**, recentrage.
@@ -77,11 +81,15 @@ via GitHub Actions.
 - Missions avec récompenses (population, école, bonheur, centre commercial,
   électricité, réseau routier).
 
-### Mondea vivant
-- Véhicules variés (voitures, camions, bus, véhicules de service) qui circulent
-  sur le réseau routier.
+### Monde vivant
+- Véhicules variés (voitures, camions, bus, véhicules de service) en circulation,
+  avec voies décalées pour éviter les chevauchements.
+- **Lignes de bus** : les arrêts de bus, placés le long des routes, créent un
+  réseau parcouru par des bus (recherche de chemin sur le réseau routier).
+  La ligne peut être affichée sur la carte depuis l'onglet Gestion.
 - Feux de circulation animés aux intersections.
-- Brouillard et ambiance météo.
+- Indice de **circulation** calculé selon la population et le réseau routier.
+- Brouillard, pluie et météo changeant au fil des jours.
 
 ### Sauvegardes
 - Sauvegarde automatique toutes les 25 secondes.

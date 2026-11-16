@@ -40,7 +40,13 @@ export class World {
   private occupancy = new Map<string, string>();
   private trafficLights: THREE.Group[] = [];
   roads: RoadNode[] = [];
-  vehicles: { mesh: THREE.Group; path: THREE.Vector3[]; t: number; speed: number; type: VehicleType }[] = [];
+  vehicles: { mesh: THREE.Group; path: THREE.Vector3[]; t: number; speed: number; type: VehicleType; lane: number }[] = [];
+  busStops: RoadNode[] = [];
+  private busStopKeys = new Set<string>();
+  private busRoute: RoadNode[] = [];
+  private buses: { mesh: THREE.Group; segment: number; t: number; wait: number }[] = [];
+  private routeLine: THREE.Line | null = null;
+  private routeGroup = new THREE.Group();
   rain: THREE.Points | null = null;
   weather: 'clear' | 'rain' = 'clear';
   mapId = 'plaine';
@@ -333,6 +339,7 @@ export class World {
     this.roadMeshes.set(this.key(x, z), mesh);
     this.refreshRoadMarkings();
     this.updateTrafficLights();
+    if (this.busStops.length >= 2) { this.rebuildBusRoute(); this.syncBuses(); }
     return true;
   }
 
@@ -346,6 +353,7 @@ export class World {
       if (m) { this.roadsGroup.remove(m); m.geometry.dispose(); this.roadMeshes.delete(this.key(x, z)); }
       this.refreshRoadMarkings();
       this.updateTrafficLights();
+      if (this.busStops.length >= 2) { this.rebuildBusRoute(); this.syncBuses(); }
       return { type: 'road' };
     }
     return { type: 'building', uid: occ };
@@ -549,7 +557,7 @@ export class World {
     const baseW = def.width * TILE * 0.82;
     const baseD = def.depth * TILE * 0.82;
     const totalH = def.height * 1.5 * (1 + (b.level - 1) * 0.14);
-    const tiers = b.level >= 3 ? 3 : 2;
+    const tiers = b.level >= 4 ? 4 : b.level >= 2 ? 3 : 2;
     const segH = totalH / tiers;
     const tint = def.id === 'business_tower' ? 0x8fc6e8 : 0x9fc0d6;
     let y = 0, cw = baseW, cd = baseD;
@@ -1010,9 +1018,113 @@ export class World {
     }
   }
 
+  // ------------------------------------------------------------- Bus lines
+  setBusStops(stops: RoadNode[]) {
+    const seen = new Set<string>();
+    this.busStops = stops.filter(s => {
+      const k = this.key(s.x, s.z);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    this.busStopKeys = seen;
+    this.rebuildBusRoute();
+    this.syncBuses();
+  }
+
+  private bfsRoadPath(start: RoadNode, end: RoadNode): RoadNode[] {
+    const startKey = this.key(start.x, start.z);
+    const endKey = this.key(end.x, end.z);
+    if (startKey === endKey) return [start];
+    const queue: RoadNode[] = [start];
+    const prev = new Map<string, string | null>();
+    prev.set(startKey, null);
+    while (queue.length) {
+      const cur = queue.shift()!;
+      if (this.key(cur.x, cur.z) === endKey) break;
+      for (const nb of this.neighbors(cur.x, cur.z)) {
+        const k = this.key(nb.x, nb.z);
+        if (prev.has(k)) continue;
+        prev.set(k, this.key(cur.x, cur.z));
+        queue.push(nb);
+      }
+    }
+    if (!prev.has(endKey)) return [];
+    const path: RoadNode[] = [];
+    let cursor: string | null = endKey;
+    while (cursor) {
+      const [x, z] = cursor.split(',').map(Number);
+      path.push({ x, z });
+      cursor = prev.get(cursor) ?? null;
+    }
+    return path.reverse();
+  }
+
+  private rebuildBusRoute() {
+    this.busRoute = [];
+    if (this.busStops.length < 2) return;
+    const remaining = this.busStops.slice(1);
+    let current = this.busStops[0];
+    const ordered: RoadNode[] = [current];
+    while (remaining.length) {
+      remaining.sort((a, b) => {
+        const da = Math.hypot(a.x - current.x, a.z - current.z);
+        const db = Math.hypot(b.x - current.x, b.z - current.z);
+        return da - db;
+      });
+      const next = remaining.shift()!;
+      const leg = this.bfsRoadPath(current, next);
+      if (leg.length) {
+        if (this.busRoute.length === 0) this.busRoute.push(...leg);
+        else this.busRoute.push(...leg.slice(1));
+        ordered.push(next);
+      }
+      current = next;
+    }
+    if (ordered.length >= 2 && this.busRoute.length > 1) {
+      const back = this.bfsRoadPath(current, ordered[0]);
+      if (back.length > 1) this.busRoute.push(...back.slice(1));
+    }
+  }
+
+  private syncBuses() {
+    const desired = this.busRoute.length >= 4 ? Math.min(5, Math.max(1, Math.floor(this.busStops.length / 2))) : 0;
+    while (this.buses.length < desired) {
+      const mesh = this.createVehicleMesh('bus');
+      this.vehiclesGroup.add(mesh);
+      this.buses.push({ mesh, segment: Math.floor(Math.random() * Math.max(1, this.busRoute.length)), t: 0, wait: 0 });
+    }
+    while (this.buses.length > desired) {
+      const b = this.buses.pop()!;
+      this.vehiclesGroup.remove(b.mesh);
+    }
+  }
+
+  private updateBuses(dt: number) {
+    if (this.busRoute.length < 2 || this.buses.length === 0) return;
+    for (const b of this.buses) {
+      if (b.wait > 0) { b.wait -= dt * 0.016; continue; }
+      const i = b.segment % this.busRoute.length;
+      const j = (i + 1) % this.busRoute.length;
+      const a = this.cellToWorld(this.busRoute[i].x, this.busRoute[i].z); a.y = 0.06;
+      const c = this.cellToWorld(this.busRoute[j].x, this.busRoute[j].z); c.y = 0.06;
+      const len = Math.max(0.2, a.distanceTo(c));
+      b.t += (0.0045 * dt) / len;
+      if (b.t >= 1) {
+        b.segment = (b.segment + 1) % this.busRoute.length;
+        b.t = 0;
+        const stop = this.busRoute[b.segment];
+        if (this.busStopKeys.has(this.key(stop.x, stop.z))) b.wait = 2.2;
+      }
+      const p = new THREE.Vector3().lerpVectors(a, c, Math.min(1, b.t));
+      b.mesh.position.copy(p);
+      const dir = c.clone().sub(a);
+      if (dir.lengthSq() > 0.0001) b.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+    }
+  }
+
   setNightMode(night: boolean) {
-    const intensity = night ? 1.35 : 0;
-    this.buildingsGroup.traverse((o: THREE.Object3D) => {
+    const intensity = night ? 1.35 : 0;    this.buildingsGroup.traverse((o: THREE.Object3D) => {
       if (o.userData?.window) (o as THREE.Mesh).visible = true;
       const mat = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
       if (mat && (mat as any).emissive && o.userData?.window) {
@@ -1044,13 +1156,13 @@ export class World {
     if (!nbs.length) return;
     const b = nbs[Math.floor(Math.random() * nbs.length)];
     const r = Math.random();
-    const type: VehicleType = r < 0.09 ? 'bus' : r < 0.24 ? 'truck' : r < 0.34 ? 'service' : 'car';
+    const type: VehicleType = r < 0.15 ? 'truck' : r < 0.25 ? 'service' : 'car';
     const mesh = this.createVehicleMesh(type);
     this.vehiclesGroup.add(mesh);
     const pa = this.cellToWorld(a.x, a.z); pa.y = 0.06;
     const pb = this.cellToWorld(b.x, b.z); pb.y = 0.06;
-    const speed = type === 'bus' ? 0.0022 : type === 'truck' ? 0.0028 : 0.004 + Math.random() * 0.002;
-    this.vehicles.push({ mesh, path: [pa, pb, this.pickNext(pb, pa)], t: 0, speed, type });
+    const speed = type === 'truck' ? 0.0028 : 0.004 + Math.random() * 0.002;
+    this.vehicles.push({ mesh, path: [pa, pb, this.pickNext(pb, pa)], t: 0, speed, type, lane: (Math.random() > 0.5 ? 1 : -1) * 0.26 });
   }
 
   private createVehicleMesh(type: VehicleType): THREE.Group {
@@ -1106,10 +1218,17 @@ export class World {
         v.t = 0;
       }
       const p = new THREE.Vector3().lerpVectors(v.path[0], v.path[1], Math.min(1, v.t));
-      v.mesh.position.copy(p);
       const dir = v.path[1].clone().sub(v.path[0]);
-      if (dir.lengthSq() > 0.0001) v.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+      dir.y = 0;
+      if (dir.lengthSq() > 0.0001) {
+        const d = dir.clone().normalize();
+        const side = new THREE.Vector3(-d.z, 0, d.x).multiplyScalar(v.lane);
+        p.add(side);
+        v.mesh.rotation.y = Math.atan2(d.x, d.z);
+      }
+      v.mesh.position.copy(p);
     }
+    this.updateBuses(dt);
   }
 
   getBuildingMeshes() { return this.buildingMeshes; }
@@ -1139,5 +1258,45 @@ export class World {
       child.geometry.dispose();
       (child.material as THREE.Material).dispose();
     }
+  }
+
+  showBusRoute() {
+    this.hideBusRoute();
+    if (this.busRoute.length < 2) return;
+    const points = this.busRoute.map(n => {
+      const p = this.cellToWorld(n.x, n.z);
+      p.y = 0.1;
+      return p;
+    });
+    // A line alone is nearly invisible in an isometric view; add bright
+    // tiles on each road cell of the route.
+    const tileMat = new THREE.MeshBasicMaterial({ color: 0x29b6f6, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+    for (const n of this.busRoute) {
+      const p = this.cellToWorld(n.x, n.z);
+      const tile = new THREE.Mesh(new THREE.PlaneGeometry(TILE * 0.34, TILE * 0.34), tileMat);
+      tile.rotation.x = -Math.PI / 2;
+      tile.position.set(p.x, 0.09, p.z);
+      this.routeGroup.add(tile);
+    }
+    const linePts = points.concat([points[0].clone()]);
+    const geo = new THREE.BufferGeometry().setFromPoints(linePts);
+    const mat = new THREE.LineBasicMaterial({ color: 0x29b6f6, transparent: true, opacity: 0.95 });
+    this.routeLine = new THREE.Line(geo, mat);
+    this.scene.add(this.routeLine, this.routeGroup);
+  }
+
+  hideBusRoute() {
+    if (this.routeLine) {
+      this.scene.remove(this.routeLine);
+      this.routeLine.geometry.dispose();
+      (this.routeLine.material as THREE.Material).dispose();
+      this.routeLine = null;
+    }
+    while (this.routeGroup.children.length) {
+      const child = this.routeGroup.children.pop() as THREE.Mesh;
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+    }
+    this.scene.remove(this.routeGroup);
   }
 }

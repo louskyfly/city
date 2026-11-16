@@ -145,6 +145,17 @@ export class UI {
           <button class="btn" data-speed="2">×2</button>
           <button class="btn" data-speed="3">×3</button>
         </div>
+        <div class="pause-overlay" id="pause-overlay" style="display:none">
+          <div class="pause-card">
+            <div class="pause-icon">⏸</div>
+            <h3>En pause</h3>
+            <p class="small">La simulation et la circulation sont suspendues.</p>
+            <div class="row">
+              <button class="btn primary" id="resume-btn">Reprendre</button>
+              <button class="btn" id="pause-menu-btn">Menu</button>
+            </div>
+          </div>
+        </div>
       </div>`;
     this.renderTabs();
     this.renderCatalog(stats.tier);
@@ -173,6 +184,12 @@ export class UI {
     this.root.querySelectorAll('[data-speed]').forEach(el => {
       (el as HTMLElement).classList.toggle('active', Number((el as HTMLElement).dataset.speed) === speed);
     });
+    this.setPaused(speed === 0);
+  }
+
+  setPaused(paused: boolean) {
+    const overlay = this.root.querySelector('#pause-overlay') as HTMLElement | null;
+    if (overlay) overlay.style.display = paused ? 'flex' : 'none';
   }
 
   renderTabs() {
@@ -280,6 +297,7 @@ export class UI {
         <div class="mg-grid">
           <div><span>Pollution</span><b id="mg-pollution">${stats.pollution}</b></div>
           <div><span>Bruit</span><b id="mg-noise">${stats.noise}</b></div>
+          <div><span>Circulation</span><b id="mg-traffic">${stats.traffic}</b></div>
           <div><span>Écoles</span><b id="mg-school">${stats.schoolCoverage} %</b></div>
           <div><span>Santé</span><b id="mg-health">${stats.healthCoverage} %</b></div>
           <div><span>Loisirs</span><b id="mg-leisure">${stats.leisureCoverage} %</b></div>
@@ -287,6 +305,14 @@ export class UI {
           <div><span>Bus</span><b id="mg-bus">${stats.busCoverage} %</b></div>
           <div><span>Bonheur</span><b id="mg-happiness">${stats.happiness} %</b></div>
         </div>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Transports</div>
+        <div class="mg-grid">
+          <div><span>Couverture bus</span><b id="mg-bus2">${stats.busCoverage} %</b></div>
+          <div><span>Politique</span><b>${policies.transport ? 'Active' : '—'}</b></div>
+        </div>
+        <button class="btn" id="mg-route-btn" style="margin-top:7px;width:100%">Afficher la ligne de bus</button>
       </div>
       <div class="mg-section">
         <div class="mg-title">Budget / tick</div>
@@ -299,7 +325,11 @@ export class UI {
       </div>
       <div class="mg-section">
         <div class="mg-title">Population</div>
-        <div class="mg-spark" id="mg-spark">${this.sparkline(history)}</div>
+        <div class="mg-spark" id="mg-spark">${this.sparkline(history, 'population')}</div>
+      </div>
+      <div class="mg-section">
+        <div class="mg-title">Trésorerie</div>
+        <div class="mg-spark" id="mg-spark-money">${this.sparkline(history, 'money', 'var(--good)')}</div>
       </div>
       <div class="mg-section">
         <div class="mg-title">Sauvegardes</div>
@@ -323,6 +353,12 @@ export class UI {
     el.querySelectorAll('[data-save-slot]').forEach(btn => btn.addEventListener('click', () => {
       this.onAction('save-slot', { slot: Number((btn as HTMLElement).dataset.saveSlot) });
     }));
+    el.querySelector('#mg-route-btn')?.addEventListener('click', (event) => {
+      const btn = event.currentTarget as HTMLButtonElement;
+      const hiding = btn.textContent?.includes('Masquer') ?? false;
+      btn.textContent = hiding ? 'Afficher la ligne de bus' : 'Masquer la ligne de bus';
+      this.onAction('toggle-bus-route');
+    });
   }
 
   updateManagement(stats: CityStats, history: StatsPoint[]) {
@@ -334,11 +370,13 @@ export class UI {
     };
     set('mg-pollution', `${stats.pollution}`);
     set('mg-noise', `${stats.noise}`);
+    set('mg-traffic', `${stats.traffic}`);
     set('mg-school', `${stats.schoolCoverage} %`);
     set('mg-health', `${stats.healthCoverage} %`);
     set('mg-leisure', `${stats.leisureCoverage} %`);
     set('mg-safety', `${stats.safetyCoverage} %`);
     set('mg-bus', `${stats.busCoverage} %`);
+    set('mg-bus2', `${stats.busCoverage} %`);
     set('mg-happiness', `${stats.happiness} %`);
     set('mg-income', `+${stats.income} €`);
     set('mg-expenses', `−${stats.expenses} €`);
@@ -346,23 +384,32 @@ export class UI {
     set('mg-balance', `${balance >= 0 ? '+' : ''}${balance} €`);
     set('mg-money', `${Math.round(stats.money)} €`);
     const spark = el.querySelector('#mg-spark');
-    if (spark) spark.innerHTML = this.sparkline(history, false);
+    if (spark) spark.innerHTML = this.sparkline(history, 'population', 'var(--accent)', false);
+    const sparkMoney = el.querySelector('#mg-spark-money');
+    if (sparkMoney) sparkMoney.innerHTML = this.sparkline(history, 'money', 'var(--good)', false);
   }
 
-  private sparkline(history: StatsPoint[], showEmpty = true): string {
+  private sparkline(history: StatsPoint[], key: 'population' | 'money' = 'population', color = 'var(--accent)', showEmpty = true): string {
     const pts = history.slice(-60);
     if (pts.length < 2) {
       return showEmpty ? '<div class="small">Données en cours de collecte…</div>' : '';
     }
     const w = 300, h = 54;
-    const max = Math.max(10, ...pts.map(p => p.population));
+    const values = pts.map(p => p[key]);
+    const max = Math.max(10, ...values);
+    const min = key === 'money' ? Math.min(0, ...values) : 0;
+    const range = Math.max(1, max - min);
     const step = w / (pts.length - 1);
-    const poly = pts.map((p, i) => `${(i * step).toFixed(1)},${(h - (p.population / max) * (h - 6) - 3).toFixed(1)}`).join(' ');
+    const poly = pts.map((p, i) => {
+      const v = p[key];
+      return `${(i * step).toFixed(1)},${(h - ((v - min) / range) * (h - 6) - 3).toFixed(1)}`;
+    }).join(' ');
     const last = pts[pts.length - 1];
+    const label = key === 'money' ? `${Math.round(last.money)} €` : `${last.population} hab.`;
     return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:54px;display:block">
-      <polyline points="${poly}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+      <polyline points="${poly}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>
     </svg>
-    <div class="small" style="display:flex;justify-content:space-between"><span>J${pts[0].day}</span><span>${last.population} hab.</span><span>J${last.day}</span></div>`;
+    <div class="small" style="display:flex;justify-content:space-between"><span>J${pts[0].day}</span><span>${label}</span><span>J${last.day}</span></div>`;
   }
 
   updateHUD(stats: CityStats, completedMissions: string[], weather?: string) {
@@ -412,6 +459,8 @@ export class UI {
     this.root.querySelector('#menu-btn')?.addEventListener('click', () => this.onAction('menu'));
     this.root.querySelector('#recenter-btn')?.addEventListener('click', () => this.onAction('recenter'));
     this.root.querySelector('#weather-btn')?.addEventListener('click', () => this.onAction('toggle-weather'));
+    this.root.querySelector('#resume-btn')?.addEventListener('click', () => this.onAction('resume'));
+    this.root.querySelector('#pause-menu-btn')?.addEventListener('click', () => this.onAction('menu'));
     this.syncToolButtons();
   }
 

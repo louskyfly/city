@@ -30,6 +30,7 @@ export class Game {
   selectedUid: string | null = null;
   movingUid: string | null = null;
   mapId = 'plaine';
+  busRouteVisible = false;
   camTarget = new THREE.Vector3(0, 0, 0);
   zoomFactor = 1;
   viewSize = 20;
@@ -46,6 +47,7 @@ export class Game {
   sun!: THREE.DirectionalLight;
   ambient!: THREE.AmbientLight;
   private lastNight: boolean | null = null;
+  private weatherDay = 1;
   private resizeHandler = () => this.onResize();
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
 
@@ -67,6 +69,8 @@ export class Game {
     this.mapId = mapId;
     this.selectedUid = null;
     this.movingUid = null;
+    this.speed = 1;
+    this.busRouteVisible = false;
     this.mountGame();
     if (showcase) this.buildShowcase();
   }
@@ -110,6 +114,7 @@ export class Game {
       if (b.defId === 'road') this.world.placeRoad(b.x, b.z);
       else this.world.placeBuilding(b);
     }
+    this.updateBusStops();
     this.world.syncVehicles();
 
     this.bindEvents();
@@ -149,7 +154,8 @@ export class Game {
       ['park', -8, 3], ['factory', -5, 3], ['luxury_residence', -2, 3], ['mall', 2, 3],
       ['central_park', -8, 6], ['skyscraper', 2, 6], ['stadium', 7, 3], ['business_tower', 7, 6],
       ['power_plant', -7, 9], ['water_tower', 11, 0], ['water_tower', 11, 9],
-      ['bus_stop', -4, -5], ['bus_stop', 0, -5], ['bus_stop', 5, -5], ['bus_stop', -9, 2],
+      ['hotel', 10, 3], ['train_station', -4, 9], ['amusement_park', 11, 6],
+      ['bus_stop', -4, -5], ['bus_stop', 0, -5], ['bus_stop', 5, -5], ['bus_stop', -9, 3],
     ];
     for (let x = -10; x <= 12; x++) if (!this.world.getOccupant(x, -6)) this.tryPlace('road', x, -6, true);
     for (let z = -5; z <= 10; z++) if (!this.world.getOccupant(-10, z)) this.tryPlace('road', -10, z, true);
@@ -406,21 +412,46 @@ export class Game {
     } else if (occ === 'road') {
       this.selectedUid = null;
       this.world.hideServiceRadius();
+      this.world.hideBusRoute();
       this.ui.showInfo('<h4>Route</h4><p>Relie les quartiers et fait circuler les véhicules.</p>');
     } else {
       this.selectedUid = null;
       this.world.hideServiceRadius();
+      this.world.hideBusRoute();
       this.ui.showInfo(`<h4>Terrain libre</h4><p>Case (${c.x}, ${c.z}) — constructible.</p>`);
     }
   }
 
   // ------------------------------------------------------------- placement
 
+  private hasAdjacentRoad(x: number, z: number): boolean {
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
+      return this.world.getOccupant(x + dx, z + dz) === 'road';
+    });
+  }
+
+  private updateBusStops() {
+    if (!this.world) return;
+    const cells: { x: number; z: number }[] = [];
+    for (const b of this.buildings) {
+      if (b.defId !== 'bus_stop') continue;
+      const road = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+        .map(([dx, dz]) => ({ x: b.x + dx, z: b.z + dz }))
+        .find(c => this.world.getOccupant(c.x, c.z) === 'road');
+      if (road) cells.push(road);
+    }
+    this.world.setBusStops(cells);
+  }
+
   tryPlace(defId: string, x: number, z: number, quiet = false): boolean {
     const def = BUILDING_BY_ID[defId];
     if (!def) return false;
     if (def.unlockTier > this.stats.tier) { if (!quiet) this.ui.toast('Bâtiment non débloqué.'); return false; }
     if (this.stats.money < def.cost) { if (!quiet) this.ui.toast('Budget insuffisant.'); return false; }
+    if (defId === 'bus_stop' && !this.hasAdjacentRoad(x, z)) {
+      if (!quiet) this.ui.toast('Un arrêt de bus doit être placé au bord d’une route.');
+      return false;
+    }
 
     if (defId === 'road') {
       if (!this.world.placeRoad(x, z)) { if (!quiet) this.ui.toast('Emplacement indisponible.'); return false; }
@@ -433,7 +464,9 @@ export class Game {
 
     this.stats.money -= def.cost;
     this.world.syncVehicles();
+    this.updateBusStops();
     this.world.hideServiceRadius();
+    this.world.hideBusRoute();
     this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
     if (!quiet) this.ui.toast(`${def.name} construit.`);
     return true;
@@ -442,6 +475,7 @@ export class Game {
   tryBulldoze(x: number, z: number, quiet = false) {
     const res = this.world.removeAt(x, z);
     this.world.hideServiceRadius();
+    this.world.hideBusRoute();
     if (res.type === 'none') { if (!quiet) this.ui.toast('Rien à supprimer.'); return; }
     if (res.type === 'road') {
       const idx = this.buildings.findIndex(b => b.defId === 'road' && b.x === x && b.z === z);
@@ -453,7 +487,10 @@ export class Game {
         const b = this.buildings[idx];
         this.world.removeBuilding(b.uid, b);
         this.buildings.splice(idx, 1);
-        if (!quiet) this.ui.toast('Bâtiment supprimé.');
+        const def = BUILDING_BY_ID[b.defId];
+        const refund = def ? Math.floor(def.cost * 0.3 * Math.sqrt(b.level || 1)) : 0;
+        this.stats.money += refund;
+        if (!quiet) this.ui.toast(refund > 0 ? `Bâtiment supprimé · remboursé ${refund} €` : 'Bâtiment supprimé.');
         if (this.selectedUid === res.uid) {
           this.selectedUid = null;
           this.ui.showInfo('<h4>Ville</h4><p>Sélectionnez un bâtiment sur la carte.</p>');
@@ -461,6 +498,7 @@ export class Game {
       }
     }
     this.world.syncVehicles();
+    this.updateBusStops();
     this.ui.updateHUD(this.stats, this.completedMissions, this.world.weather);
   }
 
@@ -506,6 +544,8 @@ export class Game {
     const jobs = (def.jobs || 0) * b.level;
     const canUpgrade = b.level < maxLevel;
     const radius = def.serviceRadius;
+    if (def.id === 'bus_stop') this.world.showBusRoute();
+    else this.world.hideBusRoute();
     if (radius) {
       const p = this.world.cellToWorld(b.x + (def.width - 1) / 2, b.z + (def.depth - 1) / 2);
       this.world.showServiceRadius(p.x, p.z, radius, def.category === 'leisure' ? 0x53c8f0 : 0x7bed9f);
@@ -592,6 +632,7 @@ export class Game {
         else this.world?.setPreview(null);
         break;
       case 'speed': this.speed = payload.speed; this.ui.setSpeedButtons(this.speed); break;
+      case 'resume': this.speed = 1; this.ui.setSpeedButtons(1); this.ui.toast('Simulation reprise.'); break;
       case 'save': this.saveSlot('slot1'); this.ui.toast('Ville sauvegardée (slot1).'); break;
       case 'save-slot': this.saveSlot(`slot${payload.slot}`); this.ui.toast(`Ville sauvegardée (slot ${payload.slot}).`); break;
       case 'set-tax':
@@ -610,6 +651,11 @@ export class Game {
       }
       case 'open-management': this.ui.renderManagement(this.stats, this.policies, this.statsHistory); break;
       case 'open-missions': this.ui.renderMissions(this.completedMissions); break;
+      case 'toggle-bus-route':
+        this.busRouteVisible = !this.busRouteVisible;
+        if (this.busRouteVisible) { this.world.showBusRoute(); this.ui.toast('Ligne de bus affichée.'); }
+        else { this.world.hideBusRoute(); this.ui.toast('Ligne de bus masquée.'); }
+        break;
       case 'recenter': this.camTarget.set(0, 0, 0); this.zoomFactor = 1; this.onResize(); this.ui.toast('Vue recentrée.'); break;
       case 'toggle-weather': {
         const w = this.world?.weather === 'rain' ? 'clear' : 'rain';
@@ -632,6 +678,8 @@ export class Game {
     this.mapId = data.mapId || 'plaine';
     this.selectedUid = null;
     this.movingUid = null;
+    this.speed = 1;
+    this.busRouteVisible = false;
     this.mountGame();
   }
 
@@ -662,8 +710,10 @@ export class Game {
     const now = performance.now();
     const dt = Math.min((now - this.clock.last) / 1000, 0.1);
     this.clock.last = now;
-    if (this.speed > 0) this.world.updateVehicles(dt * 60 * this.speed);
-    this.world.updateEffects(dt * Math.max(1, this.speed));
+    if (this.speed > 0) {
+      this.world.updateVehicles(dt * 60 * this.speed);
+      this.world.updateEffects(dt * Math.max(1, this.speed));
+    }
     this.updateCamera();
     this.updateDayNight();
     this.renderer.render(this.scene, this.camera);
@@ -682,6 +732,14 @@ export class Game {
         happiness: this.stats.happiness,
       });
       if (this.statsHistory.length > 180) this.statsHistory.shift();
+    }
+    // Weather changes naturally at the start of some days.
+    if (this.stats.day !== this.weatherDay) {
+      this.weatherDay = this.stats.day;
+      if (Math.random() < 0.3) {
+        const next = this.world.weather === 'rain' ? 'clear' : 'rain';
+        this.world.setWeather(next);
+      }
     }
     const res = checkMissions(this.stats, this.buildings, this.completedMissions);
     if (res.newlyCompleted.length) {

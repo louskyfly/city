@@ -14,6 +14,7 @@ export function createInitialStats(): CityStats {
     waterUsed: 0,
     pollution: 0,
     noise: 0,
+    traffic: 0,
     schoolCoverage: 0,
     healthCoverage: 0,
     leisureCoverage: 0,
@@ -149,8 +150,9 @@ export function computeDerived(
   const employmentFactor = effectiveJobs > 0 ? Math.min(1, effectiveJobs / Math.max(1, population)) : 0.35;
 
   const roadCount = buildings.filter(b => b.defId === 'road' || b.defId === 'bridge').length;
-  const transportDiscount = policies.transport ? 0.5 : 1;
-  const trafficPenalty = Math.min(15, roadCount * 0.05) * transportDiscount;
+  const transportDiscount = policies.transport ? 0.65 : 1;
+  const traffic = Math.min(100, Math.round(((population * 1.6) / Math.max(1, roadCount * 12)) * 10 * transportDiscount));
+  const trafficPenalty = traffic * 0.12;
 
   let happy = 55
     + coverage.school * 0.12
@@ -193,7 +195,7 @@ export function computeDerived(
     stats: {
       money, population, capacity, jobs: effectiveJobs, happiness: happy,
       powerProduced: powerProd, powerUsed: powerUse, waterProduced: waterProd, waterUsed: waterUse,
-      pollution: pollutionIndex, noise: noiseIndex,
+      pollution: pollutionIndex, noise: noiseIndex, traffic,
       schoolCoverage: coverage.school, healthCoverage: coverage.health,
       leisureCoverage: coverage.leisure, safetyCoverage: coverage.safety,
       busCoverage: coverage.bus, taxRate, income, expenses,
